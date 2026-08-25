@@ -1,0 +1,27 @@
+// Single source of truth for load order, shared by build.js and the test.
+// Data and helpers must load before the components that use them.
+module.exports = [
+  'src/i18n.js',
+  'src/roles.js',
+  'src/mockData.js',
+  'src/clinicReadiness.js',
+  'src/clinicClosing.js',
+  'src/patientCheckIn.js',
+  'src/treatmentChecklists.js',
+  'src/attention.js',
+  'src/equipment.js',
+  'src/sterilization.js',
+  'src/inventory.js',
+  'src/nextAction.js',
+  'src/mis.js',
+  'src/history.js',
+  'src/EmployeeMaster.jsx',
+  'src/AttendanceModule.jsx',
+  'src/Today.jsx',
+  'src/Clinic.jsx',
+  'src/Patients.jsx',
+  'src/Treatment.jsx',
+  'src/MIS.jsx',
+  'src/Management.jsx',
+  'src/App.jsx',
+];

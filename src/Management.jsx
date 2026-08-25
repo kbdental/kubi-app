@@ -1,0 +1,179 @@
+// Management.jsx — the MANAGEMENT area. The default tab is the Owner
+// View: one screen answering "what needs my attention?", not a wall of
+// charts. Every number here is derived from live state elsewhere in the
+// app, so it can never disagree with what staff are seeing.
+
+window.KuBi = window.KuBi || {};
+
+function pick(field, lang) {
+  if (!field) return '';
+  return field[lang] || field.en;
+}
+
+window.KuBi.Management = function Management({ lang, appointments, treatmentChecked, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, equipmentStatus, sterPacks, closingChecked, initialSubtab, goTo }) {
+  const t = window.KuBi.t;
+  const TABS = ['owner', 'attendance', 'staff'];
+  const [subtab, setSubtab] = React.useState(initialSubtab || 'owner');
+
+  React.useEffect(function () {
+    if (initialSubtab) setSubtab(initialSubtab);
+  }, [initialSubtab]);
+
+  // ---- derived counts --------------------------------------------------
+  const readiness = window.KuBi.readinessStats(checked);
+  const attention = window.KuBi.computeAttentionItems(
+    appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked
+  );
+
+  const scheduled = appointments.filter(function (a) { return a.status !== 'no_show'; }).length;
+  const completed = appointments.filter(function (a) { return a.status === 'done'; }).length;
+
+  const inProgress = appointments.filter(function (a) {
+    const p = (procedureState || {})[a.id];
+    return p && p.startedAt && !p.completedAt;
+  }).length;
+
+  // Delayed = waiting beyond the SOP threshold, or a no-show.
+  const delayed = appointments.filter(function (a) {
+    if (a.status === 'no_show') return true;
+    if (a.status === 'waiting' && a.statusAt) {
+      return Math.floor((Date.now() - new Date(a.statusAt).getTime()) / 60000) > 15;
+    }
+    return false;
+  }).length;
+
+  const treatmentsComplete = appointments.filter(function (a) { return (closedCases || {})[a.id]; }).length;
+
+  // Documentation: of the procedures actually finished, how many have a
+  // complete after-checklist. Cases never started aren't counted against it.
+  const finished = appointments.filter(function (a) {
+    const p = (procedureState || {})[a.id];
+    return p && p.completedAt;
+  });
+  const documented = finished.filter(function (a) {
+    return window.KuBi.treatmentAfterStats(a.procedureType, (treatmentCheckedAfter || {})[a.id] || {}).complete;
+  }).length;
+
+  const attendanceCounts = window.KuBi.attendanceCounts();
+  const staffPresent = attendanceCounts.Present + attendanceCounts.Late;
+  const staffTotal = staffPresent + attendanceCounts.Absent;
+
+  function attentionText(item) {
+    if (item.kind === 'waitingTooLong') return item.patient + ' — ' + t('attention.waitingTooLong', lang) + ' ' + item.minutes + ' ' + t('attention.minutes', lang);
+    if (item.kind === 'noShow') return item.patient + ' — ' + t('attention.noShow', lang);
+    if (item.kind === 'roomNotReady') return t('clinic.room', lang) + ' ' + item.room_no + ' — ' + t('attention.roomNotReady', lang);
+    if (item.kind === 'treatmentNotReady') return item.patient + ' — ' + t('attention.treatmentNotReady', lang);
+    if (item.kind === 'caseNotClosed') return item.patient + ' — ' + t('attention.caseNotClosed', lang);
+    return '';
+  }
+
+  function Metric({ label, value, tone, sub }) {
+    return (
+      <div className={'own-metric' + (tone ? ' own-' + tone : '')}>
+        <div className="own-metric-label">{label}</div>
+        <div className="own-metric-value">{value}</div>
+        {sub ? <div className="own-metric-sub">{sub}</div> : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="module">
+      <div className="module-head">
+        <h2>{t('nav.management', lang)}</h2>
+      </div>
+
+      <div className="view-toggle sub-tab-row">
+        {TABS.map(function (tb) {
+          return (
+            <button key={tb} className={'toggle-btn' + (subtab === tb ? ' toggle-btn-active' : '')} onClick={function () { setSubtab(tb); }}>
+              {t('management.tab.' + tb, lang)}
+            </button>
+          );
+        })}
+      </div>
+
+      {subtab === 'owner' ? (
+        <React.Fragment>
+          <div className="own-grid">
+            <Metric
+              label={t('own.clinic', lang)}
+              value={(clinicStatus.open ? '🟢 ' : '🔴 ') + t(clinicStatus.open ? 'today.openLabel' : 'today.closedLabel', lang)}
+              tone={clinicStatus.open ? 'good' : 'bad'}
+            />
+            <Metric
+              label={t('own.patients', lang)}
+              value={completed + ' / ' + scheduled}
+              sub={t('own.completed', lang)}
+            />
+            <Metric
+              label={t('own.treatments', lang)}
+              value={treatmentsComplete + ' ' + t('own.complete', lang)}
+              sub={inProgress + ' ' + t('own.inProgress', lang) + (delayed ? ' · ' + delayed + ' ' + t('own.delayed', lang) : '')}
+              tone={delayed ? 'warn' : null}
+            />
+            <Metric
+              label={t('own.readiness', lang)}
+              value={readiness.pct + '%'}
+              tone={readiness.pct >= 100 ? 'good' : readiness.pct >= 50 ? null : 'bad'}
+            />
+            <Metric
+              label={t('own.staff', lang)}
+              value={staffPresent + ' / ' + staffTotal}
+              sub={t('own.present', lang)}
+              tone={attendanceCounts.Absent ? 'warn' : 'good'}
+            />
+            <Metric
+              label={t('own.documentation', lang)}
+              value={documented + ' / ' + finished.length}
+              sub={t('own.complete', lang)}
+              tone={finished.length && documented < finished.length ? 'warn' : 'good'}
+            />
+            <Metric
+              label={t('own.casesClosed', lang)}
+              value={treatmentsComplete + ' / ' + finished.length}
+              sub={t('own.closed', lang)}
+              tone={finished.length && treatmentsComplete < finished.length ? 'warn' : 'good'}
+            />
+            <Metric
+              label={t('own.exceptions', lang)}
+              value={String(attention.length)}
+              tone={attention.length ? 'bad' : 'good'}
+            />
+          </div>
+
+          <div className="card own-attention-card">
+            <div className="card-title">
+              {attention.length ? '🔴 ' : '🟢 '}{t('own.attention', lang)}
+              {attention.length ? <span className="own-attention-count">{attention.length}</span> : null}
+            </div>
+            {attention.length === 0 ? (
+              <p className="module-sub">{t('todayHome.allClear', lang)}</p>
+            ) : (
+              <ol className="own-attention-list">
+                {attention.map(function (item) {
+                  return (
+                    <li key={item.id} className="own-attention-item" onClick={function () { goTo(item.area, item.subtab || null, item.apptId || null, item.room || null); }}>
+                      <span className="attention-area-tag">{t('nav.' + item.area, lang).toUpperCase()}</span>
+                      <span className="attention-body">
+                        <span className="attention-text">{attentionText(item)}</span>
+                        {item.owner ? (
+                          <span className="attention-owner">
+                            {t('why.owner', lang)} <window.KuBi.RoleBadge roleId={item.owner} lang={lang} />
+                          </span>
+                        ) : null}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </div>
+        </React.Fragment>
+      ) : null}
+
+      {subtab === 'attendance' ? <window.KuBi.AttendanceModule lang={lang} /> : null}
+      {subtab === 'staff' ? <window.KuBi.EmployeeMaster lang={lang} /> : null}
+    </div>
+  );
+};

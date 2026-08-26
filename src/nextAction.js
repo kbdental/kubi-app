@@ -40,7 +40,38 @@ window.KuBi.nextAction = function (ctx) {
     };
   }
 
-  // 2. Someone is mid-procedure — that's the live event.
+  // 2. Clinic open but the day's opening readiness is unfinished, and
+  //    nothing live is happening yet — the morning gate. Deliberately
+  //    below equipment: a broken machine outranks ticking a checklist.
+  //    Once patients are moving, patient flow outranks this, and the
+  //    room-level checks are picked up by the chair rule further down.
+  const liveNow = appts.some(function (a) {
+    const p = proc[a.id];
+    return a.status === 'arrived' || a.status === 'waiting' ||
+           a.status === 'in_chair' || a.status === 'in_treatment' ||
+           (p && p.startedAt && !p.completedAt);
+  });
+  // At the end of the day an unfinished morning list must not stand in
+  // front of closing, so this only applies while work remains.
+  const workRemains = !appts.length || appts.some(function (a) {
+    return a.status !== 'done' && a.status !== 'no_show';
+  });
+  if (!liveNow && workRemains) {
+    const rd = window.KuBi.openingReadinessStats(readiness);
+    if (!rd.complete && rd.firstPending) {
+      const sec = rd.firstPending.section;
+      return {
+        kind: 'readinessIncomplete',
+        section: sec, room: rd.firstPending.room || null,
+        done: rd.done, total: rd.total, pending: rd.pending,
+        area: 'clinic',
+        subtab: window.KuBi.CLINIC_SUBTAB_OF[sec.id] || 'readiness',
+        owner: sec.ownerRole || 'clinic_manager',
+      };
+    }
+  }
+
+  // 3. Someone is mid-procedure — that's the live event.
   const running = appts.find(function (a) {
     const p = proc[a.id];
     return p && p.startedAt && !p.completedAt;
@@ -49,7 +80,7 @@ window.KuBi.nextAction = function (ctx) {
     return { kind: 'inProgress', appt: running, area: 'treatment', subtab: 'before', apptId: running.id, owner: 'lead_dentist' };
   }
 
-  // 3. Procedure finished but not documented/closed — the gap that
+  // 4. Procedure finished but not documented/closed — the gap that
   //    quietly loses records if nobody is prompted.
   const undocumented = appts.find(function (a) {
     const p = proc[a.id];
@@ -62,7 +93,7 @@ window.KuBi.nextAction = function (ctx) {
     return { kind: 'needsDocumentation', appt: undocumented, missing: missing, area: 'treatment', subtab: 'after', apptId: undocumented.id, owner: 'lead_dentist' };
   }
 
-  // 4. Supplies missing for a treatment still to come today — a
+  // 5. Supplies missing for a treatment still to come today — a
   //    prerequisite, so checked before anyone is seated.
   const upcoming = appts.filter(function (a) {
     return a.status !== 'done' && a.status !== 'no_show' && !closed[a.id];
@@ -83,7 +114,7 @@ window.KuBi.nextAction = function (ctx) {
   }
 
 
-  // 5. No sterile packs at all — also a prerequisite.
+  // 6. No sterile packs at all — also a prerequisite.
   const st = window.KuBi.sterStats(sterPacks);
   if (st.total > 0 && st.available === 0 && upcoming.length) {
     const stuck = {};
@@ -98,7 +129,7 @@ window.KuBi.nextAction = function (ctx) {
   }
 
 
-  // 6. Patient in the chair — ready to start, or still missing something.
+  // 7. Patient in the chair — ready to start, or still missing something.
   const seated = appts.find(function (a) { return a.status === 'in_chair'; });
   if (seated) {
     const stats = window.KuBi.treatmentReadyStats(seated.procedureType, before[seated.id] || {});
@@ -108,7 +139,7 @@ window.KuBi.nextAction = function (ctx) {
     return { kind: 'notReady', appt: seated, missing: stats.missing, area: 'treatment', subtab: 'before', apptId: seated.id, owner: 'lead_dental_assistant' };
   }
 
-  // 7. No one seated, a patient is waiting, and no chair is ready —
+  // 8. No one seated, a patient is waiting, and no chair is ready —
   //     the blocking problem is the room, so say that, not "seat them".
   const anyWaiting = appts.some(function (a) { return a.status === 'arrived' || a.status === 'waiting'; });
   if (anyWaiting) {
@@ -130,7 +161,7 @@ window.KuBi.nextAction = function (ctx) {
     }
   }
 
-  // 8. Someone has arrived and needs a chair.
+  // 9. Someone has arrived and needs a chair.
   const waitingList = appts.filter(function (a) { return a.status === 'arrived' || a.status === 'waiting'; });
   if (waitingList.length) {
     // Offer the first free, ready room if there is one.
@@ -147,7 +178,7 @@ window.KuBi.nextAction = function (ctx) {
     return { kind: 'seatPatient', appt: next, room: freeReadyRoom, area: 'patients', apptId: next.id, owner: 'front_desk_receptionist' };
   }
 
-  // 9. Day's clinical work done — point at closing.
+  // 10. Day's clinical work done — point at closing.
   const anyOpen = appts.some(function (a) {
     return a.status !== 'done' && a.status !== 'no_show';
   });

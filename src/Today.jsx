@@ -62,6 +62,13 @@ window.KuBi.Today = function Today({ lang, clinicStatus, appointments, checked, 
           headline = t('now.clinicClosed', lang);
           cta = t('today.openBtn', lang);
           tone = 'now-alert'; mark = '🔴';
+        } else if (na.kind === 'readinessIncomplete') {
+          headline = t('now.readinessIncomplete', lang);
+          detail = t('why.reason', lang) + ' ' + na.pending + ' ' + t('now.tasksLeft', lang) + ' — ' +
+            (na.section.title[lang] || na.section.title.en) +
+            (na.room ? ' (' + t('clinic.room', lang) + ' ' + na.room + ')' : '');
+          cta = t('now.finishReadiness', lang);
+          tone = 'now-alert'; mark = '🔴';
         } else if (na.kind === 'inProgress') {
           headline = na.appt.patient + ' — ' + na.appt.procedureType + ' ' + t('now.underway', lang);
           cta = t('proc.completeBtn', lang);

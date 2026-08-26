@@ -621,7 +621,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 26 Aug 2026, 02:09 pm';
+  window.KuBi.BUILD_STAMP = 'Build: 26 Aug 2026, 02:18 pm';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -34112,6 +34112,18 @@ window.KuBi.STRINGS = {
     en: 'Run sterilization',
     hi: 'स्टरलाइज़ेशन चलाएं'
   },
+  'now.readinessIncomplete': {
+    en: 'Today’s readiness isn’t finished',
+    hi: 'आज की तैयारी पूरी नहीं हुई'
+  },
+  'now.tasksLeft': {
+    en: 'tasks left',
+    hi: 'कार्य बाकी'
+  },
+  'now.finishReadiness': {
+    en: 'Finish readiness',
+    hi: 'तैयारी पूरी करें'
+  },
   'nav.treatment': {
     en: 'Treatment',
     hi: 'इलाज'
@@ -35576,6 +35588,38 @@ window.KuBi.readinessStats = function (checked) {
     pct: all.length ? Math.round(done / all.length * 100) : 0
   };
 };
+
+// The morning gate: every readiness task EXCEPT the ones that belong to
+// closing (fumigation), which are end-of-day work and must not be counted
+// against the opening checklist. Returns the first outstanding task's
+// section and room so callers can point straight at the work.
+window.KuBi.openingReadinessStats = function (checked) {
+  let done = 0;
+  let total = 0;
+  let firstPending = null;
+  window.KuBi.CLINIC_READINESS.forEach(function (section) {
+    if (window.KuBi.CLINIC_SUBTAB_OF[section.id] === 'closing') return;
+    const rooms = section.perRoom ? window.KuBi.CLINIC_ROOMS : [null];
+    rooms.forEach(function (room) {
+      section.groups.forEach(function (g, gi) {
+        g.tasks.forEach(function (t, ti) {
+          total++;
+          if (checked[window.KuBi.taskKey(section, gi, ti, room)]) done++;else if (!firstPending) firstPending = {
+            section: section,
+            room: room
+          };
+        });
+      });
+    });
+  });
+  return {
+    done: done,
+    total: total,
+    pending: total - done,
+    complete: total > 0 && done === total,
+    firstPending: firstPending
+  };
+};
 window.KuBi.CLINIC_READINESS = [{
   id: 'staff_entry',
   title: s('1. Staff Entry & Personal Hygiene Protocol', '1. स्टाफ एंट्री और व्यक्तिगत स्वच्छता नियम'),
@@ -36847,7 +36891,39 @@ window.KuBi.nextAction = function (ctx) {
     };
   }
 
-  // 2. Someone is mid-procedure — that's the live event.
+  // 2. Clinic open but the day's opening readiness is unfinished, and
+  //    nothing live is happening yet — the morning gate. Deliberately
+  //    below equipment: a broken machine outranks ticking a checklist.
+  //    Once patients are moving, patient flow outranks this, and the
+  //    room-level checks are picked up by the chair rule further down.
+  const liveNow = appts.some(function (a) {
+    const p = proc[a.id];
+    return a.status === 'arrived' || a.status === 'waiting' || a.status === 'in_chair' || a.status === 'in_treatment' || p && p.startedAt && !p.completedAt;
+  });
+  // At the end of the day an unfinished morning list must not stand in
+  // front of closing, so this only applies while work remains.
+  const workRemains = !appts.length || appts.some(function (a) {
+    return a.status !== 'done' && a.status !== 'no_show';
+  });
+  if (!liveNow && workRemains) {
+    const rd = window.KuBi.openingReadinessStats(readiness);
+    if (!rd.complete && rd.firstPending) {
+      const sec = rd.firstPending.section;
+      return {
+        kind: 'readinessIncomplete',
+        section: sec,
+        room: rd.firstPending.room || null,
+        done: rd.done,
+        total: rd.total,
+        pending: rd.pending,
+        area: 'clinic',
+        subtab: window.KuBi.CLINIC_SUBTAB_OF[sec.id] || 'readiness',
+        owner: sec.ownerRole || 'clinic_manager'
+      };
+    }
+  }
+
+  // 3. Someone is mid-procedure — that's the live event.
   const running = appts.find(function (a) {
     const p = proc[a.id];
     return p && p.startedAt && !p.completedAt;
@@ -36863,7 +36939,7 @@ window.KuBi.nextAction = function (ctx) {
     };
   }
 
-  // 3. Procedure finished but not documented/closed — the gap that
+  // 4. Procedure finished but not documented/closed — the gap that
   //    quietly loses records if nobody is prompted.
   const undocumented = appts.find(function (a) {
     const p = proc[a.id];
@@ -36886,7 +36962,7 @@ window.KuBi.nextAction = function (ctx) {
     };
   }
 
-  // 4. Supplies missing for a treatment still to come today — a
+  // 5. Supplies missing for a treatment still to come today — a
   //    prerequisite, so checked before anyone is seated.
   const upcoming = appts.filter(function (a) {
     return a.status !== 'done' && a.status !== 'no_show' && !closed[a.id];
@@ -36910,7 +36986,7 @@ window.KuBi.nextAction = function (ctx) {
     };
   }
 
-  // 5. No sterile packs at all — also a prerequisite.
+  // 6. No sterile packs at all — also a prerequisite.
   const st = window.KuBi.sterStats(sterPacks);
   if (st.total > 0 && st.available === 0 && upcoming.length) {
     const stuck = {};
@@ -36931,7 +37007,7 @@ window.KuBi.nextAction = function (ctx) {
     };
   }
 
-  // 6. Patient in the chair — ready to start, or still missing something.
+  // 7. Patient in the chair — ready to start, or still missing something.
   const seated = appts.find(function (a) {
     return a.status === 'in_chair';
   });
@@ -36958,7 +37034,7 @@ window.KuBi.nextAction = function (ctx) {
     };
   }
 
-  // 7. No one seated, a patient is waiting, and no chair is ready —
+  // 8. No one seated, a patient is waiting, and no chair is ready —
   //     the blocking problem is the room, so say that, not "seat them".
   const anyWaiting = appts.some(function (a) {
     return a.status === 'arrived' || a.status === 'waiting';
@@ -36991,7 +37067,7 @@ window.KuBi.nextAction = function (ctx) {
     }
   }
 
-  // 8. Someone has arrived and needs a chair.
+  // 9. Someone has arrived and needs a chair.
   const waitingList = appts.filter(function (a) {
     return a.status === 'arrived' || a.status === 'waiting';
   });
@@ -37024,7 +37100,7 @@ window.KuBi.nextAction = function (ctx) {
     };
   }
 
-  // 9. Day's clinical work done — point at closing.
+  // 10. Day's clinical work done — point at closing.
   const anyOpen = appts.some(function (a) {
     return a.status !== 'done' && a.status !== 'no_show';
   });
@@ -37686,6 +37762,12 @@ window.KuBi.Today = function Today({
     if (na.kind === 'openClinic') {
       headline = t('now.clinicClosed', lang);
       cta = t('today.openBtn', lang);
+      tone = 'now-alert';
+      mark = '🔴';
+    } else if (na.kind === 'readinessIncomplete') {
+      headline = t('now.readinessIncomplete', lang);
+      detail = t('why.reason', lang) + ' ' + na.pending + ' ' + t('now.tasksLeft', lang) + ' — ' + (na.section.title[lang] || na.section.title.en) + (na.room ? ' (' + t('clinic.room', lang) + ' ' + na.room + ')' : '');
+      cta = t('now.finishReadiness', lang);
       tone = 'now-alert';
       mark = '🔴';
     } else if (na.kind === 'inProgress') {

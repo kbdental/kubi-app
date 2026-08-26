@@ -29,6 +29,34 @@ window.KuBi.readinessStats = function (checked) {
   return { done: done, total: all.length, pct: all.length ? Math.round(done / all.length * 100) : 0 };
 };
 
+// The morning gate: every readiness task EXCEPT the ones that belong to
+// closing (fumigation), which are end-of-day work and must not be counted
+// against the opening checklist. Returns the first outstanding task's
+// section and room so callers can point straight at the work.
+window.KuBi.openingReadinessStats = function (checked) {
+  let done = 0;
+  let total = 0;
+  let firstPending = null;
+  window.KuBi.CLINIC_READINESS.forEach(function (section) {
+    if (window.KuBi.CLINIC_SUBTAB_OF[section.id] === 'closing') return;
+    const rooms = section.perRoom ? window.KuBi.CLINIC_ROOMS : [null];
+    rooms.forEach(function (room) {
+      section.groups.forEach(function (g, gi) {
+        g.tasks.forEach(function (t, ti) {
+          total++;
+          if (checked[window.KuBi.taskKey(section, gi, ti, room)]) done++;
+          else if (!firstPending) firstPending = { section: section, room: room };
+        });
+      });
+    });
+  });
+  return {
+    done: done, total: total, pending: total - done,
+    complete: total > 0 && done === total,
+    firstPending: firstPending,
+  };
+};
+
 window.KuBi.CLINIC_READINESS = [
   {
     id: 'staff_entry',

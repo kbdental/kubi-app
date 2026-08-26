@@ -16,7 +16,10 @@ window.KuBi.Clinic = function Clinic({ currentUser, lang, checked, onToggle, cli
   const RoleBadge = window.KuBi.RoleBadge;
   const SECTIONS = window.KuBi.CLINIC_READINESS;
   const SUBTABS = window.KuBi.CLINIC_SUBTABS;
-  const [subtab, setSubtab] = React.useState(initialSubtab || 'opening');
+  // Opening is a means, not a destination: once the clinic is open that tab
+  // has nothing left to do, so land on Readiness — the actual next work —
+  // rather than parking staff on a status card.
+  const [subtab, setSubtab] = React.useState(initialSubtab || (clinicStatus.open ? 'readiness' : 'opening'));
   // Roles that own no checklist sections (e.g. Owner/Admin, who supervises
   // rather than performs) would otherwise land on an empty "My Checklist".
   // Default those users to the full view instead.
@@ -34,6 +37,15 @@ window.KuBi.Clinic = function Clinic({ currentUser, lang, checked, onToggle, cli
   React.useEffect(function () {
     if (initialSubtab) setSubtab(initialSubtab);
   }, [initialSubtab]);
+
+  // Same reason, for the moment of opening itself: when the clinic flips
+  // open while the user is sitting on Opening, move them on. Only on the
+  // transition, so anyone who deliberately picks Opening later can stay.
+  const wasOpen = React.useRef(clinicStatus.open);
+  React.useEffect(function () {
+    if (!wasOpen.current && clinicStatus.open && subtab === 'opening') setSubtab('readiness');
+    wasOpen.current = clinicStatus.open;
+  }, [clinicStatus.open]);
 
   function isMine(section) {
     return !section.ownerRole || section.ownerRole === currentUser.role || section.contingencyRole === currentUser.role;

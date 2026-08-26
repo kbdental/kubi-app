@@ -621,7 +621,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 26 Aug 2026, 03:09 pm';
+  window.KuBi.BUILD_STAMP = 'Build: 26 Aug 2026, 03:22 pm';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -37368,15 +37368,137 @@ window.KuBi.misWaiting = function (appointments) {
   };
 };
 
+// ---- src/sheetsSync.js ----
+// sheetsSync.js — the one place that talks to Google Sheets.
+//
+// KuBi still runs from a local file with no server. This module is the
+// only part that reaches the network, and it is entirely optional: leave
+// CONFIG blank and the app behaves exactly as it always has, with history
+// held in memory for the session.
+//
+// Transport is a plain fetch to an Apps Script web app, the same shape
+// the clinic's other tools use: GET with a query string to read, POST
+// with text/plain to write. text/plain matters — it keeps the request
+// "simple" in CORS terms, so the browser sends it without a preflight,
+// which an Apps Script /exec endpoint cannot answer.
+//
+// Nothing here throws into the app. Every failure resolves to a value the
+// caller can act on, because a clinic with no internet must still open.
+
+window.KuBi = window.KuBi || {};
+
+// ---------------------------------------------------------------------
+// CONFIG — the clinic fills these two in after deploying KuBi_History.gs.
+// url:   the web app's /exec URL
+// token: the same string set as TOKEN in the script
+// Leave both empty to run without any sync at all.
+// ---------------------------------------------------------------------
+window.KuBi.SHEETS_CONFIG = {
+  url: '',
+  token: ''
+};
+window.KuBi.historySync = function () {
+  const TIMEOUT_MS = 8000;
+  function config() {
+    return window.KuBi.SHEETS_CONFIG || {
+      url: '',
+      token: ''
+    };
+  }
+  function isConfigured() {
+    const c = config();
+    return !!(c.url && typeof window.fetch === 'function');
+  }
+
+  // Resolves to null on any failure — never rejects, never throws.
+  function request(opts) {
+    if (!isConfigured()) return Promise.resolve(null);
+    const c = config();
+    let done = false;
+    return new Promise(function (resolve) {
+      const finish = function (value) {
+        if (!done) {
+          done = true;
+          resolve(value);
+        }
+      };
+      // Apps Script can hang; don't let a stalled request wedge a caller.
+      setTimeout(function () {
+        finish(null);
+      }, TIMEOUT_MS);
+      let url = c.url + '?action=' + encodeURIComponent(opts.action) + '&token=' + encodeURIComponent(c.token || '');
+      const init = {
+        method: opts.body ? 'POST' : 'GET'
+      };
+      if (opts.body) {
+        // text/plain keeps this a simple request — no CORS preflight.
+        init.headers = {
+          'Content-Type': 'text/plain;charset=utf-8'
+        };
+        init.body = JSON.stringify(opts.body);
+      }
+      window.fetch(url, init).then(function (r) {
+        return r.ok ? r.json() : null;
+      }).then(function (json) {
+        finish(json && json.status === 'ok' ? json : null);
+      }).catch(function () {
+        finish(null);
+      });
+    });
+  }
+  return {
+    isConfigured: isConfigured,
+    // Resolves to an array of snapshots, or null if unreachable. An empty
+    // array means "reached the sheet, it holds nothing" — a real answer,
+    // and deliberately distinct from null.
+    load: function () {
+      return request({
+        action: 'historyAll'
+      }).then(function (json) {
+        return json && Array.isArray(json.rows) ? json.rows : null;
+      });
+    },
+    // Resolve true only on confirmed success, so the caller knows whether
+    // it still needs to hold the write.
+    save: function (snapshot) {
+      return request({
+        action: 'historyPut',
+        body: {
+          snapshot: snapshot
+        }
+      }).then(function (json) {
+        return !!json;
+      });
+    },
+    remove: function (date) {
+      return request({
+        action: 'historyRemove',
+        body: {
+          date: date
+        }
+      }).then(function (json) {
+        return !!json;
+      });
+    }
+  };
+}();
+
 // ---- src/history.js ----
 // history.js — persistent daily records for MIS trends.
 //
 // STORAGE ADAPTER
 // KuBi runs in environments where browser storage is unavailable, so all
-// persistence goes through one small adapter. Today it holds records in
-// memory (they reset on reload). To make history real, replace ONLY the
-// adapter — e.g. point it at Google Sheets, the same way Attendance is
-// planned to work. Nothing else in the app needs to change.
+// persistence goes through one small adapter. It keeps every record in
+// memory and, when a Google Sheet is configured in sheetsSync.js, mirrors
+// that memory to the sheet: read once on load, write through on change.
+//
+// Reads stay synchronous because MIS calls them while rendering. The
+// network cannot be synchronous, so the sheet hydrates in the background
+// and listeners are notified when it lands — that is what subscribe() is
+// for, and it is the only thing outside this file that had to change.
+//
+// With no sheet configured the adapter behaves exactly as it always did:
+// records live for the session and MIS honestly reports no history.
 //
 // CAPTURE POLICY
 // A day is captured when the clinic is CLOSED — that is the only moment
@@ -37388,9 +37510,47 @@ window.KuBi = window.KuBi || {};
 window.KuBi.historyStore = function () {
   let records = {}; // date -> snapshot
   let rolling = null; // today's live snapshot, not yet committed
+  let listeners = [];
+  let pending = []; // writes the sheet has not accepted yet
+  let hydrated = false;
+  function notify() {
+    listeners.slice().forEach(function (fn) {
+      try {
+        fn();
+      } catch (e) {/* a bad listener must not break storage */}
+    });
+  }
+  function sync() {
+    return window.KuBi.historySync;
+  }
 
+  // Retry anything the sheet has not taken yet. Order is preserved, and a
+  // write that fails again goes back on the queue rather than being lost.
+  function flush() {
+    if (!sync().isConfigured() || !pending.length) return Promise.resolve();
+    const queue = pending;
+    pending = [];
+    return queue.reduce(function (chain, job) {
+      return chain.then(function () {
+        const attempt = job.op === 'remove' ? sync().remove(job.date) : sync().save(job.snapshot);
+        return attempt.then(function (ok) {
+          if (!ok) pending.push(job);
+        });
+      });
+    }, Promise.resolve());
+  }
+  function queue(job) {
+    if (!sync().isConfigured()) return Promise.resolve(false);
+    const attempt = job.op === 'remove' ? sync().remove(job.date) : sync().save(job.snapshot);
+    return attempt.then(function (ok) {
+      if (!ok) pending.push(job);
+      return ok;
+    });
+  }
   return {
-    // Replace these four methods to swap in real storage.
+    // The four storage methods. Reads answer from memory; writes update
+    // memory first so the UI never waits on the network, then go to the
+    // sheet.
     all: function () {
       return Object.keys(records).map(function (d) {
         return records[d];
@@ -37401,9 +37561,19 @@ window.KuBi.historyStore = function () {
     },
     put: function (snapshot) {
       records[snapshot.date] = snapshot;
+      notify();
+      return queue({
+        op: 'put',
+        snapshot: snapshot
+      });
     },
     remove: function (date) {
       delete records[date];
+      notify();
+      return queue({
+        op: 'remove',
+        date: date
+      });
     },
     // Rolling (uncommitted) snapshot of the current day.
     setRolling: function (s) {
@@ -37411,9 +37581,64 @@ window.KuBi.historyStore = function () {
     },
     getRolling: function () {
       return rolling;
+    },
+    // ---- sheet mirror ------------------------------------------------
+    // Read the sheet once and merge it in. Anything written locally wins:
+    // it is either newer than the sheet or still queued for it.
+    hydrate: function () {
+      if (!sync().isConfigured()) return Promise.resolve(false);
+      return sync().load().then(function (rows) {
+        if (!rows) return false;
+        const merged = {};
+        rows.forEach(function (r) {
+          if (r && r.date) merged[r.date] = r;
+        });
+        Object.keys(records).forEach(function (d) {
+          merged[d] = records[d];
+        });
+        records = merged;
+        hydrated = true;
+        notify();
+        return flush().then(function () {
+          return true;
+        });
+      });
+    },
+    // Re-render hook for anything that reads history while rendering.
+    subscribe: function (fn) {
+      listeners.push(fn);
+      return function () {
+        listeners = listeners.filter(function (l) {
+          return l !== fn;
+        });
+      };
+    },
+    // Visible state, for tests and for deciding what MIS may claim.
+    state: function () {
+      return {
+        configured: sync().isConfigured(),
+        hydrated: hydrated,
+        pending: pending.length,
+        count: Object.keys(records).length
+      };
+    },
+    flush: flush,
+    // Test seam: forget everything, including listeners and queue.
+    reset: function () {
+      records = {};
+      rolling = null;
+      listeners = [];
+      pending = [];
+      hydrated = false;
     }
   };
 }();
+
+// Pull the sheet in as soon as the app loads. Fire and forget — if there
+// is no sheet, no internet, or no answer, MIS simply shows no history.
+if (window.KuBi.historySync && window.KuBi.historySync.isConfigured()) {
+  window.KuBi.historyStore.hydrate();
+}
 
 // Build a snapshot of the day from live state. Pure function — the same
 // inputs MIS already uses, reduced to the figures worth keeping.
@@ -39061,6 +39286,15 @@ window.KuBi.MIS = function MIS(props) {
   const [sec, setSec] = React.useState('today');
   const [showTasks, setShowTasks] = React.useState(false);
   const [period, setPeriod] = React.useState('today');
+
+  // History is read synchronously below, but it may arrive from the sheet
+  // after this screen has already rendered. Re-render when it lands.
+  const [, historyChanged] = React.useReducer(function (n) {
+    return n + 1;
+  }, 0);
+  React.useEffect(function () {
+    return window.KuBi.historyStore.subscribe(historyChanged);
+  }, []);
 
   // Live figures for today; stored aggregates for any other period.
   const periodData = period === 'today' ? null : window.KuBi.aggregatePeriod(period);

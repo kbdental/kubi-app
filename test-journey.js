@@ -241,6 +241,80 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   });
   check('Unfinished readiness does not block closing', endOfDay.kind === 'readyToClose', endOfDay.kind);
 
+  // 23. HISTORY STORE — the Google Sheets mirror, exercised against a
+  //     stubbed fetch so the suite never touches the network or a real
+  //     sheet. What matters is that the clinic still works when the sheet
+  //     is absent or unreachable, and that nothing is silently dropped.
+  const store = K.historyStore;
+  const realConfig = w.KuBi.SHEETS_CONFIG;
+  const yesterday = K.operatingDate(new Date(Date.now() - 86400000));
+  const snapFor = (date, booked) => ({ date: date, closedProperly: true, booked: booked, arrived: booked, completed: booked, noShow: 0, treatmentsFinished: booked, casesClosed: booked, readinessPct: 100, avgWait: 5, maxWait: 9, staffPresent: 4, staffTotal: 5, exceptions: 0, docPending: 0 });
+
+  // No sheet configured — the original in-memory behaviour, untouched.
+  store.reset();
+  w.KuBi.SHEETS_CONFIG = { url: '', token: '' };
+  store.put(snapFor(yesterday, 7));
+  check('Works with no sheet configured',
+        store.state().configured === false && store.get(yesterday) !== null && store.state().pending === 0);
+
+  // A reachable sheet hydrates into memory and wakes any listener.
+  store.reset();
+  w.KuBi.SHEETS_CONFIG = { url: 'https://example.invalid/exec', token: 'tok' };
+  let woke = 0;
+  const stopListening = store.subscribe(() => { woke++; });
+  let lastRequest = null;
+  w.fetch = (url, init) => {
+    lastRequest = { url: url, init: init };
+    if (/action=historyAll/.test(url)) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok', rows: [snapFor(yesterday, 11)] }) });
+    }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+  };
+  await store.hydrate();
+  check('Sheet history hydrates into memory', K.historyDepth() === 1, K.historyDepth() + ' day(s)');
+  check('Hydrating notifies the screen', woke > 0, woke + ' notification(s)');
+  check('Hydrated history unlocks a period', K.periodAvailable('yesterday') === true);
+  check('Hydrated history feeds aggregates', (K.aggregatePeriod('yesterday') || {}).booked === 11);
+
+  // A write goes to memory immediately and to the sheet without a preflight.
+  await store.put(snapFor(yesterday, 12));
+  check('Write reaches the sheet', store.state().pending === 0 && /action=historyPut/.test(lastRequest.url), 'pending ' + store.state().pending);
+  check('Write avoids a CORS preflight',
+        lastRequest.init.method === 'POST' && /text\/plain/.test(lastRequest.init.headers['Content-Type']),
+        lastRequest.init.headers['Content-Type']);
+
+  // Unreachable sheet: memory still updates, and the write is held.
+  w.fetch = () => Promise.reject(new Error('offline'));
+  await store.put(snapFor(yesterday, 13));
+  check('Offline write still updates the app', (store.get(yesterday) || {}).booked === 13);
+  check('Offline write is queued, not lost', store.state().pending === 1, 'pending ' + store.state().pending);
+
+  // Back online: the held write goes through.
+  w.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+  await store.flush();
+  check('Queued write is sent once reachable', store.state().pending === 0, 'pending ' + store.state().pending);
+
+  // An unreachable sheet must never look like an empty one.
+  store.reset();
+  w.fetch = () => Promise.reject(new Error('offline'));
+  const hydratedOffline = await store.hydrate();
+  check('Unreachable sheet is not mistaken for empty history',
+        hydratedOffline === false && store.state().hydrated === false && K.historyDepth() === 0);
+
+  // Local writes outrank whatever the sheet holds for the same day.
+  store.reset();
+  store.put(snapFor(yesterday, 99));
+  w.fetch = (url) => /action=historyAll/.test(url)
+    ? Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok', rows: [snapFor(yesterday, 1)] }) })
+    : Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+  await store.hydrate();
+  check('Local writes win over the sheet', (store.get(yesterday) || {}).booked === 99, 'booked ' + (store.get(yesterday) || {}).booked);
+
+  stopListening();
+  store.reset();
+  w.KuBi.SHEETS_CONFIG = realConfig;
+  delete w.fetch;
+
   // SUMMARY
   await step(() => {}, 150);
   const failed = results.filter(r => !r.pass);

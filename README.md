@@ -13,7 +13,7 @@ React is bundled in.
 ```bash
 npm install
 npm run build     # compiles src/ -> KuBi.html
-npm test          # builds, then runs 37 journey checks + 7 bundle checks
+npm test          # builds, then runs 59 journey checks + 7 bundle checks
 ```
 
 `KuBi.html` is generated. Edit `src/`, never the bundle.
@@ -36,6 +36,7 @@ src/
   inventory.js         Materials mapped to procedures
   nextAction.js        THE PRIORITY ENGINE — one action from 8 states
   mis.js               Management KPI computation
+  sheetsSync.js        Google Sheets transport (the only network code)
   history.js           Daily snapshots + trends (STORAGE ADAPTER HERE)
 
   # screens (JSX)
@@ -68,9 +69,30 @@ sequences, which silently corrupts React's source (it contains
 fault — the journey test compiles `src/` directly and cannot see it.
 Keep both in `npm test`.
 
-## Known limitation
+## History and Google Sheets
 
-`history.js` stores daily snapshots **in memory** — they clear on reload,
-so MIS trends stay empty in practice. To make history real, replace the
-four methods in `historyStore` (`all`, `get`, `put`, `remove`) with real
-storage. Nothing else changes.
+`history.js` keeps daily snapshots in memory and, when a sheet is
+configured, mirrors them to Google Sheets: read once on load, written
+through on change. Configure it in `src/sheetsSync.js`:
+
+```js
+window.KuBi.SHEETS_CONFIG = { url: '<web app /exec URL>', token: '<token>' };
+```
+
+`apps-script/KuBi_History.gs` is the other half — paste it into the
+sheet's Apps Script editor and deploy it as a web app. Deployment steps
+are in the file's header comment.
+
+**Leave `SHEETS_CONFIG` empty and nothing reaches the network.** History
+then lives for the session only, exactly as it did before, and MIS
+reports no history rather than inventing averages. The clinic can still
+open with no internet: writes made while offline are held and sent when
+the sheet is reachable again, and an unreachable sheet is never treated
+as an empty one.
+
+Reads stay synchronous, because MIS calls them while rendering. The sheet
+arrives afterwards, so `historyStore.subscribe()` tells MIS to re-render
+when it lands — the one change this needed outside `historyStore`.
+
+`buildSnapshot()` in `src/history.js` and `HEADERS` in the .gs file are
+one contract. Add new fields at the end of both.

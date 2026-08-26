@@ -14,6 +14,7 @@ module.exports = [
   'src/inventory.js',
   'src/nextAction.js',
   'src/mis.js',
+  'src/sheetsSync.js',
   'src/history.js',
   'src/EmployeeMaster.jsx',
   'src/AttendanceModule.jsx',

@@ -16,6 +16,13 @@ window.KuBi.MIS = function MIS(props) {
   const [showTasks, setShowTasks] = React.useState(false);
   const [period, setPeriod] = React.useState('today');
 
+  // History is read synchronously below, but it may arrive from the sheet
+  // after this screen has already rendered. Re-render when it lands.
+  const [, historyChanged] = React.useReducer(function (n) { return n + 1; }, 0);
+  React.useEffect(function () {
+    return window.KuBi.historyStore.subscribe(historyChanged);
+  }, []);
+
   // Live figures for today; stored aggregates for any other period.
   const periodData = period === 'today' ? null : window.KuBi.aggregatePeriod(period);
 

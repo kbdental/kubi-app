@@ -2,10 +2,17 @@
 //
 // STORAGE ADAPTER
 // KuBi runs in environments where browser storage is unavailable, so all
-// persistence goes through one small adapter. Today it holds records in
-// memory (they reset on reload). To make history real, replace ONLY the
-// adapter — e.g. point it at Google Sheets, the same way Attendance is
-// planned to work. Nothing else in the app needs to change.
+// persistence goes through one small adapter. It keeps every record in
+// memory and, when a Google Sheet is configured in sheetsSync.js, mirrors
+// that memory to the sheet: read once on load, write through on change.
+//
+// Reads stay synchronous because MIS calls them while rendering. The
+// network cannot be synchronous, so the sheet hydrates in the background
+// and listeners are notified when it lands — that is what subscribe() is
+// for, and it is the only thing outside this file that had to change.
+//
+// With no sheet configured the adapter behaves exactly as it always did:
+// records live for the session and MIS honestly reports no history.
 //
 // CAPTURE POLICY
 // A day is captured when the clinic is CLOSED — that is the only moment
@@ -18,21 +25,117 @@ window.KuBi = window.KuBi || {};
 window.KuBi.historyStore = (function () {
   let records = {};   // date -> snapshot
   let rolling = null; // today's live snapshot, not yet committed
+  let listeners = [];
+  let pending = [];   // writes the sheet has not accepted yet
+  let hydrated = false;
+
+  function notify() {
+    listeners.slice().forEach(function (fn) {
+      try { fn(); } catch (e) { /* a bad listener must not break storage */ }
+    });
+  }
+
+  function sync() { return window.KuBi.historySync; }
+
+  // Retry anything the sheet has not taken yet. Order is preserved, and a
+  // write that fails again goes back on the queue rather than being lost.
+  function flush() {
+    if (!sync().isConfigured() || !pending.length) return Promise.resolve();
+    const queue = pending;
+    pending = [];
+    return queue.reduce(function (chain, job) {
+      return chain.then(function () {
+        const attempt = job.op === 'remove'
+          ? sync().remove(job.date)
+          : sync().save(job.snapshot);
+        return attempt.then(function (ok) { if (!ok) pending.push(job); });
+      });
+    }, Promise.resolve());
+  }
+
+  function queue(job) {
+    if (!sync().isConfigured()) return Promise.resolve(false);
+    const attempt = job.op === 'remove'
+      ? sync().remove(job.date)
+      : sync().save(job.snapshot);
+    return attempt.then(function (ok) {
+      if (!ok) pending.push(job);
+      return ok;
+    });
+  }
 
   return {
-    // Replace these four methods to swap in real storage.
+    // The four storage methods. Reads answer from memory; writes update
+    // memory first so the UI never waits on the network, then go to the
+    // sheet.
     all: function () {
       return Object.keys(records).map(function (d) { return records[d]; });
     },
     get: function (date) { return records[date] || null; },
-    put: function (snapshot) { records[snapshot.date] = snapshot; },
-    remove: function (date) { delete records[date]; },
+    put: function (snapshot) {
+      records[snapshot.date] = snapshot;
+      notify();
+      return queue({ op: 'put', snapshot: snapshot });
+    },
+    remove: function (date) {
+      delete records[date];
+      notify();
+      return queue({ op: 'remove', date: date });
+    },
 
     // Rolling (uncommitted) snapshot of the current day.
     setRolling: function (s) { rolling = s; },
     getRolling: function () { return rolling; },
+
+    // ---- sheet mirror ------------------------------------------------
+    // Read the sheet once and merge it in. Anything written locally wins:
+    // it is either newer than the sheet or still queued for it.
+    hydrate: function () {
+      if (!sync().isConfigured()) return Promise.resolve(false);
+      return sync().load().then(function (rows) {
+        if (!rows) return false;
+        const merged = {};
+        rows.forEach(function (r) { if (r && r.date) merged[r.date] = r; });
+        Object.keys(records).forEach(function (d) { merged[d] = records[d]; });
+        records = merged;
+        hydrated = true;
+        notify();
+        return flush().then(function () { return true; });
+      });
+    },
+
+    // Re-render hook for anything that reads history while rendering.
+    subscribe: function (fn) {
+      listeners.push(fn);
+      return function () {
+        listeners = listeners.filter(function (l) { return l !== fn; });
+      };
+    },
+
+    // Visible state, for tests and for deciding what MIS may claim.
+    state: function () {
+      return {
+        configured: sync().isConfigured(),
+        hydrated: hydrated,
+        pending: pending.length,
+        count: Object.keys(records).length,
+      };
+    },
+
+    flush: flush,
+
+    // Test seam: forget everything, including listeners and queue.
+    reset: function () {
+      records = {}; rolling = null; listeners = []; pending = []; hydrated = false;
+    },
   };
 })();
+
+// Pull the sheet in as soon as the app loads. Fire and forget — if there
+// is no sheet, no internet, or no answer, MIS simply shows no history.
+if (window.KuBi.historySync && window.KuBi.historySync.isConfigured()) {
+  window.KuBi.historyStore.hydrate();
+}
 
 // Build a snapshot of the day from live state. Pure function — the same
 // inputs MIS already uses, reduced to the figures worth keeping.

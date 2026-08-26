@@ -60,7 +60,8 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
 
   // 2. NAV — all six areas
   const navs = Array.from(doc().querySelectorAll('.nav-item')).map(n => n.textContent);
-  check('Six top-level areas present', navs.length === 6, navs.join(' | '));
+  check('Five top-level areas present', navs.length === 5, navs.join(' | '));
+  check('MIS is not a top-level area', !navs.some(n => /MIS/.test(n)), navs.join(' | '));
 
   // 3. NOW card says clinic closed
   check('NOW card prompts to open clinic', /isn.t open yet|Open the Clinic/i.test(text()));
@@ -162,12 +163,18 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   // 17. MANAGEMENT — owner view
   await step(() => click(navByText(/Management/)));
   check('Owner view renders', /Attention|Readiness/i.test(text()));
-  const mgmtTabs = Array.from(doc().querySelectorAll('.toggle-btn')).map(b => b.textContent.trim());
-  check('Management has only Overview/Attendance/Staff', mgmtTabs.length === 3, mgmtTabs.join(', '));
+  const mgmtTabs = Array.from(doc().querySelectorAll('.sub-tab-row .toggle-btn')).map(b => b.textContent.trim());
+  check('Management has Overview/MIS/People', mgmtTabs.length === 3, mgmtTabs.join(', '));
 
-  // 18. MIS — own area
-  await step(() => click(navByText(/^MIS/)));
-  check('MIS is its own area', /Trend|KPI/i.test(text()));
+  // People stacks attendance and the staff register on one tab, so a
+  // staff record stays two levels deep rather than three.
+  await step(() => click(Array.from(doc().querySelectorAll('.sub-tab-row .toggle-btn')).find(b => b.textContent.trim() === 'People')));
+  check('People shows attendance and staff together',
+        /Attendance/i.test(text()) && /Staff|Employee/i.test(text()));
+
+  // 18. MIS — a tab inside Management, not an area of its own
+  await step(() => click(Array.from(doc().querySelectorAll('.sub-tab-row .toggle-btn')).find(b => b.textContent.trim() === 'MIS')));
+  check('MIS opens inside Management', /Trend|KPI/i.test(text()));
   const periods = Array.from(doc().querySelectorAll('.period-btn'));
   check('Period selector present', periods.length === 4, periods.map(p => p.textContent).join(' | '));
   check('Historical periods locked without history',
@@ -177,7 +184,7 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
 
   // 19. MIS sections
   for (const s of ['Patients', 'Treatment', 'Clinic', 'People', 'Exceptions']) {
-    await step(() => click(Array.from(doc().querySelectorAll('.toggle-btn')).find(b => b.textContent.trim() === s)), 140);
+    await step(() => click(Array.from(doc().querySelectorAll('.mis-tabs .toggle-btn')).find(b => b.textContent.trim() === s)), 140);
     check('MIS ' + s + ' section renders', text().length > 200);
   }
 

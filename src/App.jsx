@@ -26,7 +26,6 @@ const AREAS = {
   patients: { navKey: 'nav.patients', component: function () { return window.KuBi.Patients; } },
   treatment: { navKey: 'nav.treatment', component: function () { return window.KuBi.Treatment; } },
   management: { navKey: 'nav.management', component: function () { return window.KuBi.Management; } },
-  mis: { navKey: 'nav.mis', component: function () { return window.KuBi.MIS; } },
 };
 
 function LangToggle({ lang, setLang }) {
@@ -322,38 +321,6 @@ function Shell({ user, onLogout, lang, setLang }) {
           sterPacks={sterPacks}
           closingChecked={closingChecked}
           initialSubtab={navTarget.subtab}
-          goTo={goTo}
-        />
-      );
-    }
-    if (activeArea === 'mis') {
-      const attentionItems = window.KuBi.computeAttentionItems(
-        appointments, treatmentCheckedAfter, readinessChecked, clinicStatus,
-        procedureState, closedCases, treatmentChecked
-      );
-      function describeItem(item) {
-        if (item.kind === 'waitingTooLong') return item.patient + ' — ' + t('attention.waitingTooLong', lang) + ' ' + item.minutes + ' ' + t('attention.minutes', lang);
-        if (item.kind === 'noShow') return item.patient + ' — ' + t('attention.noShow', lang);
-        if (item.kind === 'roomNotReady') return t('clinic.room', lang) + ' ' + item.room_no + ' — ' + t('attention.roomNotReady', lang);
-        if (item.kind === 'treatmentNotReady') return item.patient + ' — ' + t('attention.treatmentNotReady', lang);
-        if (item.kind === 'caseNotClosed') return item.patient + ' — ' + t('attention.caseNotClosed', lang);
-        return '';
-      }
-      return (
-        <ActiveComponent
-          lang={lang}
-          appointments={appointments}
-          procedureState={procedureState}
-          closedCases={closedCases}
-          treatmentChecked={treatmentChecked}
-          treatmentCheckedAfter={treatmentCheckedAfter}
-          readinessChecked={readinessChecked}
-          equipmentStatus={equipmentStatus}
-          sterPacks={sterPacks}
-          clinicStatus={clinicStatus}
-          closingChecked={closingChecked}
-          attention={attentionItems}
-          describe={describeItem}
           goTo={goTo}
         />
       );

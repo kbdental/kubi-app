@@ -13,7 +13,7 @@ React is bundled in.
 ```bash
 npm install
 npm run build     # compiles src/ -> KuBi.html
-npm test          # builds, then runs 59 journey checks + 7 bundle checks
+npm test          # builds, then runs 61 journey checks + 7 bundle checks
 ```
 
 `KuBi.html` is generated. Edit `src/`, never the bundle.
@@ -44,6 +44,20 @@ src/
   MIS.jsx  Management.jsx  AttendanceModule.jsx  EmployeeMaster.jsx
   App.jsx              Shell, all shared state, navigation
 ```
+
+## Five areas
+
+```
+TODAY        What needs attention now?
+CLINIC       Is the clinic ready and operating correctly?
+PATIENTS     Where is every patient in today's journey?
+TREATMENT    Where is every treatment/case?
+MANAGEMENT   Owner · MIS · People
+```
+
+MIS is management information, so it is a tab inside Management, not a
+sixth destination beside the clinical day. People stacks attendance and
+the staff register on one tab, keeping a staff record two levels deep.
 
 ## Two rules that hold the design together
 

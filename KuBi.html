@@ -621,7 +621,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 26 Aug 2026, 03:22 pm';
+  window.KuBi.BUILD_STAMP = 'Build: 26 Aug 2026, 03:31 pm';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -34132,10 +34132,6 @@ window.KuBi.STRINGS = {
     en: 'Management',
     hi: 'प्रबंधन'
   },
-  'nav.mis': {
-    en: 'MIS',
-    hi: 'एमआईएस'
-  },
   'clinic.tab.opening': {
     en: 'Opening',
     hi: 'खोलना'
@@ -34335,6 +34331,10 @@ window.KuBi.STRINGS = {
   'management.tab.staff': {
     en: 'Staff',
     hi: 'स्टाफ'
+  },
+  'management.tab.people': {
+    en: 'People',
+    hi: 'लोग'
   },
   'management.tab.mis': {
     en: 'MIS',
@@ -35336,12 +35336,15 @@ window.KuBi.CATEGORY_COLORS = {
 
 // Which top-level AREAS each role can see. Five areas total:
 // today, clinic, patients, treatment, management.
+// MIS is NOT an area — it is a tab inside Management, so that management
+// reporting sits with the rest of management rather than standing beside
+// the clinical day as a sixth destination.
 window.KuBi.AREA_ACCESS = {
-  owner_admin: ['today', 'clinic', 'patients', 'treatment', 'management', 'mis'],
-  lead_dentist: ['today', 'clinic', 'patients', 'treatment', 'management', 'mis'],
-  associate_dentist: ['today', 'clinic', 'patients', 'treatment', 'management', 'mis'],
-  mis: ['today', 'clinic', 'management', 'mis'],
-  clinic_manager: ['today', 'clinic', 'patients', 'treatment', 'management', 'mis'],
+  owner_admin: ['today', 'clinic', 'patients', 'treatment', 'management'],
+  lead_dentist: ['today', 'clinic', 'patients', 'treatment', 'management'],
+  associate_dentist: ['today', 'clinic', 'patients', 'treatment', 'management'],
+  mis: ['today', 'clinic', 'management'],
+  clinic_manager: ['today', 'clinic', 'patients', 'treatment', 'management'],
   front_desk_receptionist: ['today', 'clinic', 'patients'],
   lead_dental_assistant: ['today', 'clinic', 'patients', 'treatment'],
   sterilization_technician: ['today', 'clinic', 'treatment'],
@@ -39750,10 +39753,15 @@ window.KuBi.MIS = function MIS(props) {
 };
 
 // ---- src/Management.jsx ----
-// Management.jsx — the MANAGEMENT area. The default tab is the Owner
-// View: one screen answering "what needs my attention?", not a wall of
-// charts. Every number here is derived from live state elsewhere in the
-// app, so it can never disagree with what staff are seeing.
+// Management.jsx — the MANAGEMENT area. Tabs: Owner, MIS, People.
+// The default is the Owner View: one screen answering "what
+// needs my attention?", not a wall of charts. Every number here is
+// derived from live state elsewhere in the app, so it can never disagree
+// with what staff are seeing.
+//
+// MIS is a tab here, not a top-level area: there are five areas — today,
+// clinic, patients, treatment, management — and management reporting
+// belongs inside management.
 
 window.KuBi = window.KuBi || {};
 function pick(field, lang) {
@@ -39776,7 +39784,7 @@ window.KuBi.Management = function Management({
   goTo
 }) {
   const t = window.KuBi.t;
-  const TABS = ['owner', 'attendance', 'staff'];
+  const TABS = ['owner', 'mis', 'people'];
   const [subtab, setSubtab] = React.useState(initialSubtab || 'owner');
   React.useEffect(function () {
     if (initialSubtab) setSubtab(initialSubtab);
@@ -39925,11 +39933,26 @@ window.KuBi.Management = function Management({
       roleId: item.owner,
       lang: lang
     })) : null));
-  })))) : null, subtab === 'attendance' ? /*#__PURE__*/React.createElement(window.KuBi.AttendanceModule, {
+  })))) : null, subtab === 'mis' ? /*#__PURE__*/React.createElement(window.KuBi.MIS, {
+    lang: lang,
+    appointments: appointments,
+    procedureState: procedureState,
+    closedCases: closedCases,
+    treatmentChecked: treatmentChecked,
+    treatmentCheckedAfter: treatmentCheckedAfter,
+    readinessChecked: checked,
+    equipmentStatus: equipmentStatus,
+    sterPacks: sterPacks,
+    clinicStatus: clinicStatus,
+    closingChecked: closingChecked,
+    attention: attention,
+    describe: attentionText,
+    goTo: goTo
+  }) : null, subtab === 'people' ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(window.KuBi.AttendanceModule, {
     lang: lang
-  }) : null, subtab === 'staff' ? /*#__PURE__*/React.createElement(window.KuBi.EmployeeMaster, {
+  }), /*#__PURE__*/React.createElement(window.KuBi.EmployeeMaster, {
     lang: lang
-  }) : null);
+  })) : null);
 };
 
 // ---- src/App.jsx ----
@@ -39987,12 +40010,6 @@ const AREAS = {
     navKey: 'nav.management',
     component: function () {
       return window.KuBi.Management;
-    }
-  },
-  mis: {
-    navKey: 'nav.mis',
-    component: function () {
-      return window.KuBi.MIS;
     }
   }
 };
@@ -40350,33 +40367,6 @@ function Shell({
         sterPacks: sterPacks,
         closingChecked: closingChecked,
         initialSubtab: navTarget.subtab,
-        goTo: goTo
-      });
-    }
-    if (activeArea === 'mis') {
-      const attentionItems = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, readinessChecked, clinicStatus, procedureState, closedCases, treatmentChecked);
-      function describeItem(item) {
-        if (item.kind === 'waitingTooLong') return item.patient + ' — ' + t('attention.waitingTooLong', lang) + ' ' + item.minutes + ' ' + t('attention.minutes', lang);
-        if (item.kind === 'noShow') return item.patient + ' — ' + t('attention.noShow', lang);
-        if (item.kind === 'roomNotReady') return t('clinic.room', lang) + ' ' + item.room_no + ' — ' + t('attention.roomNotReady', lang);
-        if (item.kind === 'treatmentNotReady') return item.patient + ' — ' + t('attention.treatmentNotReady', lang);
-        if (item.kind === 'caseNotClosed') return item.patient + ' — ' + t('attention.caseNotClosed', lang);
-        return '';
-      }
-      return /*#__PURE__*/React.createElement(ActiveComponent, {
-        lang: lang,
-        appointments: appointments,
-        procedureState: procedureState,
-        closedCases: closedCases,
-        treatmentChecked: treatmentChecked,
-        treatmentCheckedAfter: treatmentCheckedAfter,
-        readinessChecked: readinessChecked,
-        equipmentStatus: equipmentStatus,
-        sterPacks: sterPacks,
-        clinicStatus: clinicStatus,
-        closingChecked: closingChecked,
-        attention: attentionItems,
-        describe: describeItem,
         goTo: goTo
       });
     }

@@ -1,7 +1,12 @@
-// Management.jsx — the MANAGEMENT area. The default tab is the Owner
-// View: one screen answering "what needs my attention?", not a wall of
-// charts. Every number here is derived from live state elsewhere in the
-// app, so it can never disagree with what staff are seeing.
+// Management.jsx — the MANAGEMENT area. Tabs: Owner, MIS, People.
+// The default is the Owner View: one screen answering "what
+// needs my attention?", not a wall of charts. Every number here is
+// derived from live state elsewhere in the app, so it can never disagree
+// with what staff are seeing.
+//
+// MIS is a tab here, not a top-level area: there are five areas — today,
+// clinic, patients, treatment, management — and management reporting
+// belongs inside management.
 
 window.KuBi = window.KuBi || {};
 
@@ -12,7 +17,7 @@ function pick(field, lang) {
 
 window.KuBi.Management = function Management({ lang, appointments, treatmentChecked, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, equipmentStatus, sterPacks, closingChecked, initialSubtab, goTo }) {
   const t = window.KuBi.t;
-  const TABS = ['owner', 'attendance', 'staff'];
+  const TABS = ['owner', 'mis', 'people'];
   const [subtab, setSubtab] = React.useState(initialSubtab || 'owner');
 
   React.useEffect(function () {
@@ -172,8 +177,37 @@ window.KuBi.Management = function Management({ lang, appointments, treatmentChec
         </React.Fragment>
       ) : null}
 
-      {subtab === 'attendance' ? <window.KuBi.AttendanceModule lang={lang} /> : null}
-      {subtab === 'staff' ? <window.KuBi.EmployeeMaster lang={lang} /> : null}
+
+      {/* MIS is management reporting, so it lives here rather than
+          standing beside the clinical day as a sixth area. */}
+      {subtab === 'mis' ? (
+        <window.KuBi.MIS
+          lang={lang}
+          appointments={appointments}
+          procedureState={procedureState}
+          closedCases={closedCases}
+          treatmentChecked={treatmentChecked}
+          treatmentCheckedAfter={treatmentCheckedAfter}
+          readinessChecked={checked}
+          equipmentStatus={equipmentStatus}
+          sterPacks={sterPacks}
+          clinicStatus={clinicStatus}
+          closingChecked={closingChecked}
+          attention={attention}
+          describe={attentionText}
+          goTo={goTo}
+        />
+      ) : null}
+      {/* People is who is here today and who works here — attendance and
+          the staff register, stacked. Each module carries its own
+          heading, and stacking keeps a staff record two levels deep
+          rather than three. */}
+      {subtab === 'people' ? (
+        <React.Fragment>
+          <window.KuBi.AttendanceModule lang={lang} />
+          <window.KuBi.EmployeeMaster lang={lang} />
+        </React.Fragment>
+      ) : null}
     </div>
   );
 };

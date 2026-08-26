@@ -28,12 +28,15 @@ window.KuBi.CATEGORY_COLORS = {
 
 // Which top-level AREAS each role can see. Five areas total:
 // today, clinic, patients, treatment, management.
+// MIS is NOT an area — it is a tab inside Management, so that management
+// reporting sits with the rest of management rather than standing beside
+// the clinical day as a sixth destination.
 window.KuBi.AREA_ACCESS = {
-  owner_admin:               ['today', 'clinic', 'patients', 'treatment', 'management', 'mis'],
-  lead_dentist:               ['today', 'clinic', 'patients', 'treatment', 'management', 'mis'],
-  associate_dentist:          ['today', 'clinic', 'patients', 'treatment', 'management', 'mis'],
-  mis:                         ['today', 'clinic', 'management', 'mis'],
-  clinic_manager:              ['today', 'clinic', 'patients', 'treatment', 'management', 'mis'],
+  owner_admin:               ['today', 'clinic', 'patients', 'treatment', 'management'],
+  lead_dentist:               ['today', 'clinic', 'patients', 'treatment', 'management'],
+  associate_dentist:          ['today', 'clinic', 'patients', 'treatment', 'management'],
+  mis:                         ['today', 'clinic', 'management'],
+  clinic_manager:              ['today', 'clinic', 'patients', 'treatment', 'management'],
   front_desk_receptionist:    ['today', 'clinic', 'patients'],
   lead_dental_assistant:       ['today', 'clinic', 'patients', 'treatment'],
   sterilization_technician:    ['today', 'clinic', 'treatment'],

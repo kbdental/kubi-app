@@ -74,6 +74,19 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   const subTabs = Array.from(doc().querySelectorAll('.toggle-btn')).map(b => b.textContent);
   check('Clinic sub-tabs render', subTabs.length >= 7, subTabs.slice(0, 8).join(', '));
 
+  // 5b. Opening the clinic hands over to Readiness rather than parking on
+  //     the "Clinic is Open" card, which has nothing left to act on.
+  await step(() => {});
+  const activeSub = () => {
+    const b = doc().querySelector('.sub-tab-row .toggle-btn-active');
+    return b ? b.textContent : '(none)';
+  };
+  check('Opening the clinic moves to Readiness', /Readiness/.test(activeSub()), activeSub());
+
+  // The open/close action must stay reachable: picking Opening by hand works.
+  await step(() => click(Array.from(doc().querySelectorAll('.sub-tab-row .toggle-btn')).find(b => /Opening/.test(b.textContent))));
+  check('Opening stays selectable once open', /Opening/.test(activeSub()) && /Clinic is Open/i.test(text()), activeSub());
+
   // 6. EQUIPMENT tab — room tabs + equipment list
   await step(() => click(Array.from(doc().querySelectorAll('.toggle-btn')).find(b => /Equipment/.test(b.textContent))));
   check('Equipment list present', /Autoclave|Compressor/.test(text()));
@@ -178,6 +191,55 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   // 21. HINDI TOGGLE
   await step(() => click(Array.from(doc().querySelectorAll('.lang-btn')).find(b => /हिं/.test(b.textContent))));
   check('Hindi renders', /मरीज़|क्लिनिक|आज/.test(text()));
+
+  // 22. PRIORITY ENGINE — the readiness rule, checked directly rather than
+  //     through the UI, because the journey above deliberately seeds a
+  //     patient in the chair and an equipment fault, both of which
+  //     outrank readiness by design.
+  const K = w.KuBi;
+  const openClinic = { open: true, by: 'Test', at: new Date() };
+
+  const everyTask = K.allReadinessTasks();
+  const openingOnly = K.openingReadinessStats({});
+  check('Opening readiness excludes closing tasks',
+        openingOnly.total > 0 && openingOnly.total < everyTask.length,
+        openingOnly.total + ' of ' + everyTask.length);
+
+  const quietMorning = K.nextAction({ clinicStatus: openClinic, appointments: [], readinessChecked: {} });
+  check('Unfinished readiness is the next action', quietMorning.kind === 'readinessIncomplete', quietMorning.kind);
+  check('Readiness action points at Clinic readiness',
+        quietMorning.area === 'clinic' && quietMorning.subtab === 'readiness',
+        quietMorning.area + '/' + quietMorning.subtab);
+  check('Readiness action names an owner and a section',
+        !!quietMorning.owner && !!(quietMorning.section && quietMorning.section.title));
+
+  const allDone = {};
+  K.CLINIC_READINESS.forEach(sec => {
+    if (K.CLINIC_SUBTAB_OF[sec.id] === 'closing') return;
+    (sec.perRoom ? K.CLINIC_ROOMS : [null]).forEach(room => {
+      sec.groups.forEach((g, gi) => g.tasks.forEach((t, ti) => { allDone[K.taskKey(sec, gi, ti, room)] = true; }));
+    });
+  });
+  const finished = K.nextAction({ clinicStatus: openClinic, appointments: [], readinessChecked: allDone });
+  check('Completed readiness stops being raised', finished.kind !== 'readinessIncomplete', finished.kind);
+
+  const inChair = K.nextAction({
+    clinicStatus: openClinic, readinessChecked: {},
+    appointments: [{ id: 't1', patient: 'Test', chair: 1, status: 'in_chair', procedureType: 'RCT' }],
+  });
+  check('Patient in the chair outranks readiness', inChair.kind !== 'readinessIncomplete', inChair.kind);
+
+  const broken = K.nextAction({
+    clinicStatus: openClinic, appointments: [], readinessChecked: {},
+    equipmentStatus: { autoclave: { ok: false, note: 'test' } },
+  });
+  check('Equipment fault outranks readiness', broken.kind === 'equipmentDown', broken.kind);
+
+  const endOfDay = K.nextAction({
+    clinicStatus: openClinic, readinessChecked: {},
+    appointments: [{ id: 't2', patient: 'Test', chair: 1, status: 'done', procedureType: 'RCT' }],
+  });
+  check('Unfinished readiness does not block closing', endOfDay.kind === 'readyToClose', endOfDay.kind);
 
   // SUMMARY
   await step(() => {}, 150);

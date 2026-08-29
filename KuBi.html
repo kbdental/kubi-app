@@ -600,6 +600,7 @@
   .now-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
   .now-footer .now-cta { margin-top: 18px; }
   .now-owner { display: flex; align-items: center; gap: 7px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-soft); margin-top: 18px; }
+  .attention-more { color: var(--ink-soft, #55636f); font-style: italic; }
   .now-good { border-color: var(--green); background: rgba(46,125,91,0.06); }
   .now-good .now-cta { color: var(--green); }
   .now-alert { border-color: var(--coral); background: rgba(193,80,46,0.06); }
@@ -621,7 +622,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 26 Aug 2026, 03:31 pm';
+  window.KuBi.BUILD_STAMP = 'Build: 29 Aug 2026, 11:08 am';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -34612,6 +34613,10 @@ window.KuBi.STRINGS = {
     en: 'is not ready',
     hi: 'तैयार नहीं है'
   },
+  'attention.andMore': {
+    en: 'more not shown',
+    hi: 'और दिखाए नहीं गए'
+  },
   'attention.treatmentNotReady': {
     en: 'in chair but treatment not ready',
     hi: 'चेयर पर हैं लेकिन इलाज तैयार नहीं'
@@ -37951,6 +37956,12 @@ window.KuBi.Today = function Today({
   const [attentionOpen, setAttentionOpen] = React.useState(false);
   const readiness = window.KuBi.readinessStats(checked);
   const attentionItems = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked);
+  // Five, and never a sixth. Past that it stops being "what needs
+  // attention" and becomes a to-do list, which staff stop reading. The
+  // count above still reports the true total.
+  const ATTENTION_SHOWN = 5;
+  const attentionShown = attentionItems.slice(0, ATTENTION_SHOWN);
+  const attentionHidden = attentionItems.length - attentionShown.length;
   const sortedAppts = appointments.slice().sort(function (a, b) {
     return a.time.localeCompare(b.time);
   });
@@ -37958,7 +37969,7 @@ window.KuBi.Today = function Today({
     if (item.kind === 'waitingTooLong') return item.patient + ' ' + t('attention.waitingTooLong', lang) + ' ' + item.minutes + ' ' + t('attention.minutes', lang);
     if (item.kind === 'noShow') return item.patient + ' ' + t('attention.noShow', lang);
     if (item.kind === 'roomNotReady') return t('clinic.room', lang) + ' ' + item.room_no + ' ' + t('attention.roomNotReady', lang) + ' (' + item.done + '/' + item.total + ')';
-    if (item.kind === 'treatmentNotReady') return item.patient + ' — ' + t('attention.treatmentNotReady', lang) + (item.missing && item.missing.length ? ': ' + item.missing.join(', ') : '');
+    if (item.kind === 'treatmentNotReady') return item.patient + ' — ' + t('attention.treatmentNotReady', lang) + (item.missing && item.missing.length ? ': ' + item.missing[0] : '');
     if (item.kind === 'caseNotClosed') return item.patient + ' — ' + t('attention.caseNotClosed', lang);
     return '';
   }
@@ -37988,16 +37999,21 @@ window.KuBi.Today = function Today({
     let tone = 'now-neutral';
     let mark = '🔵';
     if (na.kind === 'openClinic') {
+      // Not a fault: at 8:40 nobody has done anything wrong. Red is
+      // reserved for something actually being wrong, so that when it
+      // does appear, staff believe it.
       headline = t('now.clinicClosed', lang);
       cta = t('today.openBtn', lang);
-      tone = 'now-alert';
-      mark = '🔴';
+      tone = 'now-neutral';
+      mark = '🔵';
     } else if (na.kind === 'readinessIncomplete') {
       headline = t('now.readinessIncomplete', lang);
       detail = t('why.reason', lang) + ' ' + na.pending + ' ' + t('now.tasksLeft', lang) + ' — ' + (na.section.title[lang] || na.section.title.en) + (na.room ? ' (' + t('clinic.room', lang) + ' ' + na.room + ')' : '');
       cta = t('now.finishReadiness', lang);
-      tone = 'now-alert';
-      mark = '🔴';
+      // Same reason: a checklist still in progress is the morning
+      // going normally, not a problem.
+      tone = 'now-neutral';
+      mark = '🔵';
     } else if (na.kind === 'inProgress') {
       headline = na.appt.patient + ' — ' + na.appt.procedureType + ' ' + t('now.underway', lang);
       cta = t('proc.completeBtn', lang);
@@ -38005,7 +38021,7 @@ window.KuBi.Today = function Today({
       mark = '🔵';
     } else if (na.kind === 'needsDocumentation') {
       headline = na.appt.procedureType + ' ' + t('now.finishedNotClosed', lang);
-      detail = na.missing.length ? t('treatmentPrep.afterIncomplete', lang) + ' ' + na.missing.join(', ') : '';
+      detail = na.missing.length ? t('treatmentPrep.afterIncomplete', lang) + ' ' + na.missing[0] : '';
       cta = t('now.recordIt', lang);
       tone = 'now-alert';
       mark = '🔴';
@@ -38016,7 +38032,10 @@ window.KuBi.Today = function Today({
       mark = '🔵';
     } else if (na.kind === 'notReady') {
       headline = na.appt.patient + ' ' + t('now.isInChair', lang) + ' ' + na.appt.chair + ' — ' + na.appt.procedureType + ' ' + t('treatmentPrep.notReady', lang);
-      detail = t('treatmentPrep.missing', lang) + ' ' + na.missing.join(', ');
+      // The first thing standing in the way, not all of them. A list of
+      // five gives nobody a first move; when this one is done the card
+      // names the next.
+      detail = t('treatmentPrep.missing', lang) + ' ' + na.missing[0];
       cta = t('now.sortIt', lang);
       tone = 'now-alert';
       mark = '🔴';
@@ -38034,9 +38053,7 @@ window.KuBi.Today = function Today({
       mark = '🔴';
     } else if (na.kind === 'supplyMissing') {
       headline = na.appt.procedureType + ' — ' + t('treatmentPrep.notReady', lang);
-      detail = t('why.reason', lang) + ' ' + (na.labMissing ? t('inv.labPending', lang) : na.missing.map(function (m) {
-        return m[lang] || m.en;
-      }).join(', '));
+      detail = t('why.reason', lang) + ' ' + (na.labMissing ? t('inv.labPending', lang) : na.missing[0] ? na.missing[0][lang] || na.missing[0].en : '');
       cta = t('now.checkSupplies', lang);
       tone = 'now-alert';
       mark = '🔴';
@@ -38217,7 +38234,7 @@ window.KuBi.Today = function Today({
     className: "attention-count attention-count-clear"
   }, "\uD83D\uDFE2 ", t('todayHome.allClear', lang))), attentionOpen && attentionItems.length > 0 ? /*#__PURE__*/React.createElement("ul", {
     className: "checklist attention-list"
-  }, attentionItems.map(function (item) {
+  }, attentionShown.map(function (item) {
     return /*#__PURE__*/React.createElement("li", {
       key: item.id,
       className: "check-item attention-item",
@@ -38236,7 +38253,13 @@ window.KuBi.Today = function Today({
       roleId: item.owner,
       lang: lang
     })) : null));
-  })) : null), clinicStatus.open ? function () {
+  }), attentionHidden > 0 ? /*#__PURE__*/React.createElement("li", {
+    className: "check-item attention-item attention-more"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "attention-body"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "attention-text"
+  }, "+", attentionHidden, " ", t('attention.andMore', lang)))) : null) : null), clinicStatus.open ? function () {
     const cl = window.KuBi.closingStats(closingChecked);
     return /*#__PURE__*/React.createElement("div", {
       className: "card"
@@ -39914,7 +39937,7 @@ window.KuBi.Management = function Management({
     className: "module-sub"
   }, t('todayHome.allClear', lang)) : /*#__PURE__*/React.createElement("ol", {
     className: "own-attention-list"
-  }, attention.map(function (item) {
+  }, attention.slice(0, 5).map(function (item) {
     return /*#__PURE__*/React.createElement("li", {
       key: item.id,
       className: "own-attention-item",
@@ -39933,7 +39956,13 @@ window.KuBi.Management = function Management({
       roleId: item.owner,
       lang: lang
     })) : null));
-  })))) : null, subtab === 'mis' ? /*#__PURE__*/React.createElement(window.KuBi.MIS, {
+  }), attention.length > 5 ? /*#__PURE__*/React.createElement("li", {
+    className: "own-attention-item attention-more"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "attention-body"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "attention-text"
+  }, "+", attention.length - 5, " ", t('attention.andMore', lang)))) : null))) : null, subtab === 'mis' ? /*#__PURE__*/React.createElement(window.KuBi.MIS, {
     lang: lang,
     appointments: appointments,
     procedureState: procedureState,

@@ -156,7 +156,7 @@ window.KuBi.Management = function Management({ lang, appointments, treatmentChec
               <p className="module-sub">{t('todayHome.allClear', lang)}</p>
             ) : (
               <ol className="own-attention-list">
-                {attention.map(function (item) {
+                {attention.slice(0, 5).map(function (item) {
                   return (
                     <li key={item.id} className="own-attention-item" onClick={function () { goTo(item.area, item.subtab || null, item.apptId || null, item.room || null); }}>
                       <span className="attention-area-tag">{t('nav.' + item.area, lang).toUpperCase()}</span>
@@ -171,6 +171,13 @@ window.KuBi.Management = function Management({ lang, appointments, treatmentChec
                     </li>
                   );
                 })}
+                {attention.length > 5 ? (
+                  <li className="own-attention-item attention-more">
+                    <span className="attention-body">
+                      <span className="attention-text">+{attention.length - 5} {t('attention.andMore', lang)}</span>
+                    </span>
+                  </li>
+                ) : null}
               </ol>
             )}
           </div>

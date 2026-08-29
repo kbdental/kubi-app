@@ -180,6 +180,7 @@ window.KuBi.STRINGS = {
   'attention.minutes': { en: 'minutes', hi: 'मिनट' },
   'attention.noShow': { en: 'marked as No-Show', hi: 'को नो-शो के रूप में दर्ज किया गया' },
   'attention.roomNotReady': { en: 'is not ready', hi: 'तैयार नहीं है' },
+  'attention.andMore': { en: 'more not shown', hi: 'और दिखाए नहीं गए' },
   'attention.treatmentNotReady': { en: 'in chair but treatment not ready', hi: 'चेयर पर हैं लेकिन इलाज तैयार नहीं' },
   'attention.caseNotClosed': { en: 'procedure finished, case not closed', hi: 'प्रोसीज़र पूरा हुआ, केस बंद नहीं हुआ' },
   'attention.postOpIncomplete': { en: 'post-treatment record not finished', hi: 'इलाज के बाद की जानकारी अधूरी है' },

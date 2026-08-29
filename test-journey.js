@@ -65,6 +65,10 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
 
   // 3. NOW card says clinic closed
   check('NOW card prompts to open clinic', /isn.t open yet|Open the Clinic/i.test(text()));
+  // Red means something is wrong. A clinic that simply has not opened yet
+  // is not a fault, and must not borrow the colour of one.
+  const nowCls = (doc().querySelector('.now-card') || {}).className || '';
+  check('Clinic-not-open is not shown as an alert', !/now-alert/.test(nowCls), nowCls.trim());
 
   // 4. OPEN THE CLINIC via Clinic area
   await step(() => click(navByText(/Clinic$/)));
@@ -321,6 +325,26 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   store.reset();
   w.KuBi.SHEETS_CONFIG = realConfig;
   delete w.fetch;
+
+  // 24. HOW THE SCREEN SPEAKS — colour, one blocker, and the cap.
+  // A never-ticked requirement blocks exactly as hard as a failed one.
+  const proc = K.PROCEDURES ? Object.keys(K.PROCEDURES)[0] : null;
+  const untouched = K.treatmentReadyStats('RCT', {});
+  check('Never-ticked counts as not done', untouched.ready === false && untouched.missing.length > 0,
+        untouched.missing.length + ' outstanding');
+  const partial = K.treatmentReadyStats('RCT', { 0: true });
+  check('Ticking one does not unlock the rest', partial.ready === false);
+  const gateEmpty = K.closureGate('RCT', {});
+  check('Closure gate blocks on unanswered', gateEmpty.canClose === false);
+
+  // Attention is capped for display but the true count is preserved.
+  const manyAppts = [];
+  for (let i = 0; i < 9; i++) {
+    manyAppts.push({ id: 'x' + i, patient: 'Patient ' + i, chair: 1, status: 'no_show',
+                     procedureType: 'RCT', time: '09:00' });
+  }
+  const manyItems = K.computeAttentionItems(manyAppts, {}, {}, openClinic, {}, {}, {});
+  check('Attention list is not capped at source', manyItems.length > 5, manyItems.length + ' items');
 
   // SUMMARY
   await step(() => {}, 150);

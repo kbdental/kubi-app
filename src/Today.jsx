@@ -17,13 +17,19 @@ window.KuBi.Today = function Today({ lang, clinicStatus, appointments, checked, 
 
   const readiness = window.KuBi.readinessStats(checked);
   const attentionItems = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked);
+  // Five, and never a sixth. Past that it stops being "what needs
+  // attention" and becomes a to-do list, which staff stop reading. The
+  // count above still reports the true total.
+  const ATTENTION_SHOWN = 5;
+  const attentionShown = attentionItems.slice(0, ATTENTION_SHOWN);
+  const attentionHidden = attentionItems.length - attentionShown.length;
   const sortedAppts = appointments.slice().sort(function (a, b) { return a.time.localeCompare(b.time); });
 
   function attentionText(item) {
     if (item.kind === 'waitingTooLong') return item.patient + ' ' + t('attention.waitingTooLong', lang) + ' ' + item.minutes + ' ' + t('attention.minutes', lang);
     if (item.kind === 'noShow') return item.patient + ' ' + t('attention.noShow', lang);
     if (item.kind === 'roomNotReady') return t('clinic.room', lang) + ' ' + item.room_no + ' ' + t('attention.roomNotReady', lang) + ' (' + item.done + '/' + item.total + ')';
-    if (item.kind === 'treatmentNotReady') return item.patient + ' — ' + t('attention.treatmentNotReady', lang) + (item.missing && item.missing.length ? ': ' + item.missing.join(', ') : '');
+    if (item.kind === 'treatmentNotReady') return item.patient + ' — ' + t('attention.treatmentNotReady', lang) + (item.missing && item.missing.length ? ': ' + item.missing[0] : '');
     if (item.kind === 'caseNotClosed') return item.patient + ' — ' + t('attention.caseNotClosed', lang);
     return '';
   }
@@ -59,23 +65,28 @@ window.KuBi.Today = function Today({ lang, clinicStatus, appointments, checked, 
         let mark = '🔵';
 
         if (na.kind === 'openClinic') {
+          // Not a fault: at 8:40 nobody has done anything wrong. Red is
+          // reserved for something actually being wrong, so that when it
+          // does appear, staff believe it.
           headline = t('now.clinicClosed', lang);
           cta = t('today.openBtn', lang);
-          tone = 'now-alert'; mark = '🔴';
+          tone = 'now-neutral'; mark = '🔵';
         } else if (na.kind === 'readinessIncomplete') {
           headline = t('now.readinessIncomplete', lang);
           detail = t('why.reason', lang) + ' ' + na.pending + ' ' + t('now.tasksLeft', lang) + ' — ' +
             (na.section.title[lang] || na.section.title.en) +
             (na.room ? ' (' + t('clinic.room', lang) + ' ' + na.room + ')' : '');
           cta = t('now.finishReadiness', lang);
-          tone = 'now-alert'; mark = '🔴';
+          // Same reason: a checklist still in progress is the morning
+          // going normally, not a problem.
+          tone = 'now-neutral'; mark = '🔵';
         } else if (na.kind === 'inProgress') {
           headline = na.appt.patient + ' — ' + na.appt.procedureType + ' ' + t('now.underway', lang);
           cta = t('proc.completeBtn', lang);
           tone = 'now-live'; mark = '🔵';
         } else if (na.kind === 'needsDocumentation') {
           headline = na.appt.procedureType + ' ' + t('now.finishedNotClosed', lang);
-          detail = na.missing.length ? t('treatmentPrep.afterIncomplete', lang) + ' ' + na.missing.join(', ') : '';
+          detail = na.missing.length ? t('treatmentPrep.afterIncomplete', lang) + ' ' + na.missing[0] : '';
           cta = t('now.recordIt', lang);
           tone = 'now-alert'; mark = '🔴';
         } else if (na.kind === 'readyToStart') {
@@ -84,7 +95,10 @@ window.KuBi.Today = function Today({ lang, clinicStatus, appointments, checked, 
           tone = 'now-good'; mark = '🔵';
         } else if (na.kind === 'notReady') {
           headline = na.appt.patient + ' ' + t('now.isInChair', lang) + ' ' + na.appt.chair + ' — ' + na.appt.procedureType + ' ' + t('treatmentPrep.notReady', lang);
-          detail = t('treatmentPrep.missing', lang) + ' ' + na.missing.join(', ');
+          // The first thing standing in the way, not all of them. A list of
+          // five gives nobody a first move; when this one is done the card
+          // names the next.
+          detail = t('treatmentPrep.missing', lang) + ' ' + na.missing[0];
           cta = t('now.sortIt', lang);
           tone = 'now-alert'; mark = '🔴';
         } else if (na.kind === 'chairNotReady') {
@@ -101,7 +115,7 @@ window.KuBi.Today = function Today({ lang, clinicStatus, appointments, checked, 
           tone = 'now-alert'; mark = '🔴';
         } else if (na.kind === 'supplyMissing') {
           headline = na.appt.procedureType + ' — ' + t('treatmentPrep.notReady', lang);
-          detail = t('why.reason', lang) + ' ' + (na.labMissing ? t('inv.labPending', lang) : na.missing.map(function (m) { return m[lang] || m.en; }).join(', '));
+          detail = t('why.reason', lang) + ' ' + (na.labMissing ? t('inv.labPending', lang) : (na.missing[0] ? (na.missing[0][lang] || na.missing[0].en) : ''));
           cta = t('now.checkSupplies', lang);
           tone = 'now-alert'; mark = '🔴';
         } else if (na.kind === 'noSterilePacks') {
@@ -245,7 +259,7 @@ window.KuBi.Today = function Today({ lang, clinicStatus, appointments, checked, 
         </button>
         {attentionOpen && attentionItems.length > 0 ? (
           <ul className="checklist attention-list">
-            {attentionItems.map(function (item) {
+            {attentionShown.map(function (item) {
               return (
                 <li key={item.id} className="check-item attention-item" onClick={function () { goTo(item.area, item.subtab || null, item.apptId || null, item.room || null); }}>
                   <span className="attention-area-tag">{areaLabel(item.area)}</span>
@@ -260,6 +274,13 @@ window.KuBi.Today = function Today({ lang, clinicStatus, appointments, checked, 
                 </li>
               );
             })}
+            {attentionHidden > 0 ? (
+              <li className="check-item attention-item attention-more">
+                <span className="attention-body">
+                  <span className="attention-text">+{attentionHidden} {t('attention.andMore', lang)}</span>
+                </span>
+              </li>
+            ) : null}
           </ul>
         ) : null}
       </div>

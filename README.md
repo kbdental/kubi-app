@@ -59,6 +59,18 @@ MIS is management information, so it is a tab inside Management, not a
 sixth destination beside the clinical day. People stacks attendance and
 the staff register on one tab, keeping a staff record two levels deep.
 
+## Screens
+
+Built for a clinic PC, and usable on a tablet or phone. Under 900px the
+sidebar becomes a bottom tab bar, tab rows scroll sideways instead of
+stacking, and rows built for a wide screen wrap rather than run off the
+edge. The desktop layout is unchanged — every responsive rule is additive
+and lives at the end of `index.html`.
+
+Deliberately NOT `overflow-x: hidden`: hiding an overflow puts content out
+of reach with no sign it is there. Anything that cannot fit wraps or
+scrolls in its own box.
+
 ## Two rules that hold the design together
 
 **One priority engine.** `nextAction.js` consumes all eight state inputs

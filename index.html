@@ -613,6 +613,102 @@
   .today-secondary .card-title { font-size: 12.5px; color: var(--ink-soft); }
   .today-secondary .card { padding: 15px 18px; }
   .today-secondary .today-home-name { font-weight: 500; }
+
+  /* ==================================================================
+     Small screens, and things that should always have been true.
+     Everything below is ADDITIVE — the desktop layout above is
+     untouched, so a clinic PC sees exactly what it saw before.
+     ================================================================== */
+
+  /* Keyboard users need to see where they are. */
+  :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; border-radius: 6px; }
+
+  /* Respect the setting; some people get motion sick. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+
+  /* Deliberately NOT overflow:hidden — hiding an overflow puts content
+     out of reach with no way to know it is there. Rows that cannot fit
+     are made to wrap instead, below. */
+  img, svg { max-width: 100%; height: auto; }
+
+  /* Wide tables scroll inside their own box rather than stretching
+     the page. */
+  @media (max-width: 900px) {
+    .kb-table { display: block; overflow-x: auto; white-space: nowrap; }
+  }
+
+  /* ---------- phone and small tablet: nav moves to the bottom ------- */
+  @media (max-width: 900px) {
+    .shell { flex-direction: column; }
+
+    .sidebar {
+      order: 2;
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 30;
+      width: auto; height: auto;
+      border-right: none; border-top: 1px solid var(--line);
+      padding: 4px 6px calc(4px + env(safe-area-inset-bottom));
+    }
+    /* The brand is a desktop nicety; the bar needs the room. */
+    .sidebar .brand-compact { display: none; }
+
+    nav { flex-direction: row; gap: 2px; }
+    .nav-item {
+      flex: 1 1 0; min-width: 0; text-align: center;
+      padding: 10px 4px; font-size: 11.5px; line-height: 1.25;
+      min-height: 44px;                 /* a thumb, not a mouse pointer */
+      border-radius: 10px;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* Clear the fixed bar so the last row is never trapped under it. */
+    .main { padding-bottom: calc(74px + env(safe-area-inset-bottom)); }
+
+    .topbar { padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
+    .module { padding: 16px 14px; }
+    .module-head h2 { font-size: 20px; }
+
+    /* Tab rows scroll sideways instead of stacking into four rows. */
+    .view-toggle, .sub-tab-row, .room-tab-row, .mis-tabs {
+      flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin; padding-bottom: 4px;
+    }
+    .view-toggle > *, .sub-tab-row > *, .room-tab-row > *, .mis-tabs > * { flex: 0 0 auto; }
+
+    /* Anything tappable gets a real target. */
+    .toggle-btn, .room-tab, .btn-primary, .rowbtn, .lang-btn { min-height: 40px; }
+
+    /* Rows built for a wide screen: let them wrap onto a second line
+       rather than run off the edge. The fixed minimum widths are what
+       break them, so those go. */
+    .today-home-list .today-home-row,
+    .prep-appt-row,
+    .prep-appt-left { flex-wrap: wrap; }
+    .today-home-name { min-width: 0; }
+    .today-home-sub { flex: 1 1 100%; }
+    .prep-appt-row > * { min-width: 0; }
+
+    /* Journey strips are genuinely wide; let them scroll on their own. */
+    .journey-strip, .case-strip { overflow-x: auto; }
+  }
+
+  /* One more time for the narrowest phones, where even two columns of
+     status will not sit beside a name. */
+  @media (max-width: 430px) {
+    .today-home-list .today-home-row { row-gap: 4px; }
+    .today-home-time-col { width: 40px; }
+  }
+
+  /* ---------- phone proper ------------------------------------------ */
+  @media (max-width: 600px) {
+    .module { padding: 14px 12px; }
+    .now-headline { font-size: 19px; }
+    .nav-item { font-size: 10.5px; padding: 9px 2px; }
+    /* These two are fixed-column; the rest already auto-fit. */
+    .dash-grid { grid-template-columns: 1fr; }
+    .chairs-grid { grid-template-columns: 1fr 1fr; }
+  }
 </style>
 </head>
 <body>

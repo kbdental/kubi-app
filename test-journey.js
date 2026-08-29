@@ -110,11 +110,16 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   await step(() => click(Array.from(doc().querySelectorAll('.toggle-btn')).find(b => /Housekeeping/.test(b.textContent))));
   check('Floor cleaning under Housekeeping', /Floor Cleaning/i.test(text()));
   check('Bio-medical waste under Housekeeping', /Bio-Medical Waste/i.test(text()));
+  check('Utilities under Housekeeping', /Utilities & Energy/i.test(text()));
+  check('AC temperature is on the checklist', /24°C/.test(text()));
+  check('Water pump is on the checklist', /water pump/i.test(text()));
+  check('Fixtures & repairs under Housekeeping', /Fixtures & Repairs/i.test(text()));
 
   // 10. CLOSING — fumigation lives here
   await step(() => click(Array.from(doc().querySelectorAll('.toggle-btn')).find(b => /Closing/.test(b.textContent))));
   check('Closing gate present', /Clinic Cannot Close|Clinic May Close/i.test(text()));
   check('Fumigation under Closing', /Fumigation/i.test(text()));
+  check('Lights and AC on the closing gate', /Lights, fans & AC/i.test(text()));
 
   // 11. PATIENT JOURNEY
   await step(() => click(navByText(/Patient Journey/)));

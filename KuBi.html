@@ -718,7 +718,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 29 Aug 2026, 11:51 am';
+  window.KuBi.BUILD_STAMP = 'Build: 29 Aug 2026, 12:22 pm';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -35979,6 +35979,56 @@ window.KuBi.CLINIC_READINESS = [{
   }],
   note: s('Common failure points: skipping prep steps before decontamination, improper packaging/loading/positioning of instruments, not timing cycles correctly, and disorganized workflow.', 'आम गलतियां: डीकंटेमिनेशन से पहले की तैयारी छोड़ना, इंस्ट्रूमेंट सही तरीके से न पैक/रखना, साइकल का समय सही न रखना, और काम में क्रम न होना।')
 }, {
+  id: 'utilities',
+  title: s('Utilities & Energy', 'बिजली, पानी और सुविधाएं'),
+  subtitle: s('Checked through the day, not only at opening', 'सिर्फ सुबह नहीं — दिन भर देखें'),
+  ownerRole: 'house_keeping',
+  contingencyRole: 'front_desk_receptionist',
+  groups: [{
+    title: null,
+    tasks: [{
+      label: s('Air conditioning set to 24°C in rooms in use', 'इस्तेमाल हो रहे कमरों में AC 24°C पर है'),
+      details: [s('Switch the AC off in any room that is empty.', 'जो कमरा खाली है, उसका AC बंद कर दें।')]
+    }, {
+      label: s('Lights, fans and equipment off in empty rooms', 'खाली कमरों की लाइट, पंखे और उपकरण बंद हैं'),
+      details: [s('Check between patients, not only at closing time.', 'सिर्फ बंद करते समय नहीं — मरीज़ों के बीच में भी देखें।')]
+    }, {
+      label: s('Plants watered', 'पौधों को पानी दिया'),
+      details: []
+    }, {
+      label: s('Water pump checked and switched off once the tank is full', 'वॉटर पंप देखा और टंकी भरने पर बंद किया'),
+      details: [s('Leaving the pump running overflows the tank and wastes water.', 'पंप चलता छोड़ने से टंकी बहती है और पानी बर्बाद होता है।')]
+    }, {
+      label: s('Air diffuser switched on and off at the set times', 'एयर डिफ्यूज़र तय समय पर चालू और बंद किया'),
+      details: []
+    }]
+  }]
+}, {
+  id: 'fixtures',
+  title: s('Fixtures & Repairs', 'फिटिंग और मरम्मत'),
+  subtitle: s('A quick look each day, so small faults are caught early', 'रोज़ एक नज़र, ताकि छोटी खराबी समय पर पकड़ी जाए'),
+  ownerRole: 'clinic_manager',
+  contingencyRole: 'house_keeping',
+  groups: [{
+    title: null,
+    tasks: [{
+      label: s('Doors, handles and hinges working', 'दरवाज़े, हैंडल और कब्ज़े ठीक चल रहे हैं'),
+      details: []
+    }, {
+      label: s('Washbasins, taps and jet sprays — no leaks', 'वॉशबेसिन, नल और जेट स्प्रे — कोई लीक नहीं'),
+      details: []
+    }, {
+      label: s('Electrical switches and extension boards safe', 'बिजली के स्विच और एक्सटेंशन बोर्ड सुरक्षित हैं'),
+      details: [s('Look for loose sockets, exposed wiring or scorch marks.', 'ढीले सॉकेट, खुली तार या जलने के निशान देखें।')]
+    }, {
+      label: s('Chairs, cabinets, file boxes and furniture intact', 'चेयर, कैबिनेट, फाइल बॉक्स और फर्नीचर सही हालत में हैं'),
+      details: []
+    }, {
+      label: s('Anything needing plumbing, electrical or repair work reported', 'प्लंबिंग, बिजली या मरम्मत की ज़रूरत बता दी गई है'),
+      details: [s('Tell the Clinic Manager the same day — do not wait for it to get worse.', 'उसी दिन क्लिनिक मैनेजर को बताएं — बिगड़ने का इंतज़ार न करें।')]
+    }]
+  }]
+}, {
   id: 'floor_cleaning',
   title: s('Floor Cleaning — 3-Bucket Technique', 'फ्लोर क्लीनिंग — 3-बकेट तकनीक'),
   ownerRole: 'sterilization_technician',
@@ -36037,6 +36087,8 @@ window.KuBi.CLINIC_SUBTAB_OF = {
   waiting_billing: 'housekeeping',
   pantry: 'housekeeping',
   washroom: 'housekeeping',
+  utilities: 'housekeeping',
+  fixtures: 'housekeeping',
   floor_cleaning: 'housekeeping',
   biomedical_waste: 'housekeeping',
   inventory_check: 'inventory',
@@ -36129,6 +36181,16 @@ window.KuBi.CLINIC_CLOSING = [{
   critical: false,
   area: s('Equipment', 'उपकरण'),
   check: s('Switched off', 'बंद कर दिए गए')
+}, {
+  id: 'utilities',
+  critical: false,
+  area: s('Lights, fans & AC', 'लाइट, पंखे और AC'),
+  check: s('Switched off', 'बंद कर दिए गए')
+}, {
+  id: 'waterpump',
+  critical: false,
+  area: s('Water pump', 'वॉटर पंप'),
+  check: s('Switched off', 'बंद कर दिया गया')
 }, {
   id: 'rooms',
   critical: false,

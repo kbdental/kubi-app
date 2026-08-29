@@ -17,6 +17,8 @@ window.KuBi.CLINIC_CLOSING = [
   { id: 'chairs',      critical: false, area: s('Chairs', 'चेयर'),                    check: s('Cleaned/disinfected', 'साफ और डिसइन्फेक्ट कर दी गईं') },
   { id: 'materials',   critical: false, area: s('Materials', 'सामान'),                check: s('Returned/stored', 'वापस रख दिया गया') },
   { id: 'equipment',   critical: false, area: s('Equipment', 'उपकरण'),                check: s('Switched off', 'बंद कर दिए गए') },
+  { id: 'utilities',   critical: false, area: s('Lights, fans & AC', 'लाइट, पंखे और AC'),   check: s('Switched off', 'बंद कर दिए गए') },
+  { id: 'waterpump',   critical: false, area: s('Water pump', 'वॉटर पंप'),                 check: s('Switched off', 'बंद कर दिया गया') },
   { id: 'rooms',       critical: false, area: s('Rooms', 'कमरे'),                     check: s('Clean', 'साफ हैं') },
   { id: 'cash',        critical: false, area: s('Cash/payment', 'नकद/भुगतान'),         check: s('Closed', 'बंद कर दिया गया') },
   { id: 'nextday',     critical: false, area: s('Clinic', 'क्लिनिक'),                  check: s('Ready for next day', 'अगले दिन के लिए तैयार है') },

@@ -61,7 +61,44 @@ window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setS
         <button className={'toggle-btn' + (subtab === 'journey' ? ' toggle-btn-active' : '')} onClick={function () { setSubtab('journey'); }}>{t('patients.tab.journey', lang)}</button>
         <button className={'toggle-btn' + (subtab === 'followup' ? ' toggle-btn-active' : '')} onClick={function () { setSubtab('followup'); }}>{t('patients.tab.followup', lang)}</button>
         <button className={'toggle-btn' + (subtab === 'lab' ? ' toggle-btn-active' : '')} onClick={function () { setSubtab('lab'); }}>{t('patients.tab.lab', lang)}</button>
+        <button className={'toggle-btn' + (subtab === 'lapsed' ? ' toggle-btn-active' : '')} onClick={function () { setSubtab('lapsed'); }}>{t('patients.tab.lapsed', lang)}</button>
       </div>
+
+      {/* The only screen in KuBi that is not about today. Everywhere else
+          answers "what is happening now"; this one answers "who did we
+          stop hearing from". */}
+      {subtab === 'lapsed' ? (function () {
+        const lapsed = window.KuBi.lapsedPatients();
+        return (
+          <div className="card">
+            <div className="card-title">
+              {t('lapsed.title', lang)}
+              {lapsed.length ? <span className="repair-count">{lapsed.length} {t('lapsed.count', lang)}</span> : null}
+            </div>
+            <p className="module-sub">{t('lapsed.subtitle', lang)}</p>
+            {lapsed.length === 0 ? (
+              <p className="module-sub">{t('lapsed.none', lang)}</p>
+            ) : (
+              <ul className="fu-list">
+                {lapsed.map(function (r) {
+                  const days = window.KuBi.daysSinceVisit(r);
+                  return (
+                    <li key={r.id} className="fu-row">
+                      <span className="fu-dot">{r.started ? '🟡' : '🔴'}</span>
+                      <span className="fu-patient">{r.patient}</span>
+                      <span className="fu-reason">
+                        <span className="lapsed-kind">{r.started ? t('lapsed.unfinished', lang) : t('lapsed.neverStarted', lang)}</span>
+                        <span className="lapsed-plan">{r.planned}</span>
+                      </span>
+                      <span className="fu-due">{t('lapsed.lastSeen', lang)} {days} {t('lapsed.daysAgo', lang)}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        );
+      })() : null}
 
       {/* Lab work belongs with patients, not with stock: the question is
           always "has this patient's crown come back?", never "how many

@@ -162,6 +162,13 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   check('Marking a case received clears it', awaitedAfter === awaitedBefore - 1 && labRows() > 0,
         awaitedBefore + ' -> ' + awaitedAfter + ' awaited');
 
+  // 12c. NOT RETURNED — people the clinic stopped hearing from
+  await step(() => click(Array.from(doc().querySelectorAll('.sub-tab-row .toggle-btn')).find(b => /Not returned/.test(b.textContent))));
+  check('Not-returned tab renders', /stopped coming/i.test(text()));
+  check('Both kinds of silence are distinguished',
+        /Advised, never started/i.test(text()) && /Started, not finished/i.test(text()));
+  check('Recently-seen patients are not listed', !/Sunita Rao/.test(text()));
+
   // 13. TREATMENT — before checklist
   await step(() => click(navByText(/Treatment/)));
   check('Treatment rows render', doc().querySelectorAll('.prep-appt-row').length > 0,
@@ -412,6 +419,15 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
     check('Supply check agrees with the lab screen',
           K.procedureSupplyStatus('Crown', lateIds[0], cleared).labMissing === false);
   }
+
+  // 27. LAPSED — derived from the last visit, never stored.
+  const lapsed = K.lapsedPatients();
+  check('Lapsed is derived from the last visit',
+        lapsed.every(r => K.daysSinceVisit(r) >= K.LAPSED_AFTER_DAYS), lapsed.length + ' listed');
+  check('Longest silence comes first',
+        lapsed.every((r, i) => i === 0 || K.daysSinceVisit(lapsed[i - 1]) >= K.daysSinceVisit(r)));
+  check('A patient seen this month is not lapsed',
+        !K.isLapsed({ patient: 'X', lastVisit: K.operatingDate(new Date(Date.now() - 5 * 86400000)), started: true }));
 
   // SUMMARY
   await step(() => {}, 150);

@@ -614,6 +614,9 @@
   .today-secondary .card { padding: 15px 18px; }
   .today-secondary .today-home-name { font-weight: 500; }
 
+  .lapsed-kind { display: block; font-size: 11.5px; font-weight: 700; color: var(--ink-soft); }
+  .lapsed-plan { display: block; font-size: 12.5px; }
+
   /* ---------- Repairs ---------- */
   .repair-card { margin-bottom: 16px; }
   .repair-count {
@@ -744,7 +747,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 31 Aug 2026, 10:41 am';
+  window.KuBi.BUILD_STAMP = 'Build: 31 Aug 2026, 10:43 am';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -34151,6 +34154,42 @@ window.KuBi.STRINGS = {
     en: 'Lab',
     hi: 'लैब'
   },
+  'patients.tab.lapsed': {
+    en: 'Not returned',
+    hi: 'वापस नहीं आए'
+  },
+  'lapsed.title': {
+    en: 'Patients who stopped coming',
+    hi: 'जो मरीज़ आना बंद कर गए'
+  },
+  'lapsed.subtitle': {
+    en: 'Seen once, then nothing. Worth a call.',
+    hi: 'एक बार आए, फिर नहीं। एक कॉल बनती है।'
+  },
+  'lapsed.none': {
+    en: 'Nobody has gone quiet.',
+    hi: 'कोई भी मरीज़ छूटा नहीं है।'
+  },
+  'lapsed.neverStarted': {
+    en: 'Advised, never started',
+    hi: 'सलाह दी, शुरू नहीं किया'
+  },
+  'lapsed.unfinished': {
+    en: 'Started, not finished',
+    hi: 'शुरू किया, पूरा नहीं'
+  },
+  'lapsed.lastSeen': {
+    en: 'Last seen',
+    hi: 'आखिरी बार आए'
+  },
+  'lapsed.daysAgo': {
+    en: 'days ago',
+    hi: 'दिन पहले'
+  },
+  'lapsed.count': {
+    en: 'not returned',
+    hi: 'वापस नहीं आए'
+  },
   'lab.title': {
     en: 'Lab work',
     hi: 'लैब का काम'
@@ -36588,6 +36627,62 @@ window.KuBi.FOLLOW_UPS = [{
 // stale the moment the date passes.
 window.KuBi.isOverdue = function (f) {
   return f.due < window.KuBi.operatingDate();
+};
+
+// ---- Patients who stopped coming --------------------------------------
+// Two different silences, and the clinic answers them differently:
+//
+//   ADVISED    treatment was planned and they never began it
+//   UNFINISHED they began and stopped part-way
+//
+// Both are people the clinic has already met. Neither shows up anywhere
+// else in KuBi, because every other screen is about today.
+window.KuBi.LAPSED_AFTER_DAYS = 30;
+window.KuBi.PATIENT_RECORDS = [{
+  id: 'P1',
+  patient: 'Rakesh Iyer',
+  lastVisit: _fuDay(-42),
+  planned: 'Full-mouth rehabilitation',
+  started: false
+}, {
+  id: 'P2',
+  patient: 'Nisha Kapoor',
+  lastVisit: _fuDay(-64),
+  planned: 'Implant, lower right 6',
+  started: false
+}, {
+  id: 'P3',
+  patient: 'Imran Qureshi',
+  lastVisit: _fuDay(-38),
+  planned: 'RCT 26, then crown',
+  started: true
+}, {
+  id: 'P4',
+  patient: 'Sunita Rao',
+  lastVisit: _fuDay(-9),
+  planned: 'Orthodontic review',
+  started: true
+}, {
+  id: 'P5',
+  patient: 'Harish Menon',
+  lastVisit: _fuDay(-95),
+  planned: 'Denture — upper',
+  started: true
+}];
+window.KuBi.daysSinceVisit = function (rec) {
+  const then = new Date(rec.lastVisit + 'T00:00:00').getTime();
+  const now = new Date(window.KuBi.operatingDate() + 'T00:00:00').getTime();
+  return Math.max(0, Math.round((now - then) / 86400000));
+};
+window.KuBi.isLapsed = function (rec) {
+  return window.KuBi.daysSinceVisit(rec) >= window.KuBi.LAPSED_AFTER_DAYS;
+};
+
+// Longest silence first — the person the clinic is closest to losing.
+window.KuBi.lapsedPatients = function () {
+  return (window.KuBi.PATIENT_RECORDS || []).filter(window.KuBi.isLapsed).sort(function (a, b) {
+    return window.KuBi.daysSinceVisit(b) - window.KuBi.daysSinceVisit(a);
+  });
 };
 
 // ---- src/treatmentChecklists.js ----
@@ -39490,7 +39585,45 @@ window.KuBi.Patients = function Patients({
     onClick: function () {
       setSubtab('lab');
     }
-  }, t('patients.tab.lab', lang))), subtab === 'lab' ? function () {
+  }, t('patients.tab.lab', lang)), /*#__PURE__*/React.createElement("button", {
+    className: 'toggle-btn' + (subtab === 'lapsed' ? ' toggle-btn-active' : ''),
+    onClick: function () {
+      setSubtab('lapsed');
+    }
+  }, t('patients.tab.lapsed', lang))), subtab === 'lapsed' ? function () {
+    const lapsed = window.KuBi.lapsedPatients();
+    return /*#__PURE__*/React.createElement("div", {
+      className: "card"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "card-title"
+    }, t('lapsed.title', lang), lapsed.length ? /*#__PURE__*/React.createElement("span", {
+      className: "repair-count"
+    }, lapsed.length, " ", t('lapsed.count', lang)) : null), /*#__PURE__*/React.createElement("p", {
+      className: "module-sub"
+    }, t('lapsed.subtitle', lang)), lapsed.length === 0 ? /*#__PURE__*/React.createElement("p", {
+      className: "module-sub"
+    }, t('lapsed.none', lang)) : /*#__PURE__*/React.createElement("ul", {
+      className: "fu-list"
+    }, lapsed.map(function (r) {
+      const days = window.KuBi.daysSinceVisit(r);
+      return /*#__PURE__*/React.createElement("li", {
+        key: r.id,
+        className: "fu-row"
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "fu-dot"
+      }, r.started ? '🟡' : '🔴'), /*#__PURE__*/React.createElement("span", {
+        className: "fu-patient"
+      }, r.patient), /*#__PURE__*/React.createElement("span", {
+        className: "fu-reason"
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "lapsed-kind"
+      }, r.started ? t('lapsed.unfinished', lang) : t('lapsed.neverStarted', lang)), /*#__PURE__*/React.createElement("span", {
+        className: "lapsed-plan"
+      }, r.planned)), /*#__PURE__*/React.createElement("span", {
+        className: "fu-due"
+      }, t('lapsed.lastSeen', lang), " ", days, " ", t('lapsed.daysAgo', lang)));
+    })));
+  }() : null, subtab === 'lab' ? function () {
     const cases = window.KuBi.labCases(labReceived);
     const pending = window.KuBi.labPending(labReceived);
     return /*#__PURE__*/React.createElement("div", {

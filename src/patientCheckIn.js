@@ -106,3 +106,38 @@ window.KuBi.FOLLOW_UPS = [
 window.KuBi.isOverdue = function (f) {
   return f.due < window.KuBi.operatingDate();
 };
+
+// ---- Patients who stopped coming --------------------------------------
+// Two different silences, and the clinic answers them differently:
+//
+//   ADVISED    treatment was planned and they never began it
+//   UNFINISHED they began and stopped part-way
+//
+// Both are people the clinic has already met. Neither shows up anywhere
+// else in KuBi, because every other screen is about today.
+window.KuBi.LAPSED_AFTER_DAYS = 30;
+
+window.KuBi.PATIENT_RECORDS = [
+  { id: 'P1', patient: 'Rakesh Iyer',    lastVisit: _fuDay(-42), planned: 'Full-mouth rehabilitation', started: false },
+  { id: 'P2', patient: 'Nisha Kapoor',   lastVisit: _fuDay(-64), planned: 'Implant, lower right 6',    started: false },
+  { id: 'P3', patient: 'Imran Qureshi',  lastVisit: _fuDay(-38), planned: 'RCT 26, then crown',        started: true },
+  { id: 'P4', patient: 'Sunita Rao',     lastVisit: _fuDay(-9),  planned: 'Orthodontic review',        started: true },
+  { id: 'P5', patient: 'Harish Menon',   lastVisit: _fuDay(-95), planned: 'Denture — upper',           started: true },
+];
+
+window.KuBi.daysSinceVisit = function (rec) {
+  const then = new Date(rec.lastVisit + 'T00:00:00').getTime();
+  const now = new Date(window.KuBi.operatingDate() + 'T00:00:00').getTime();
+  return Math.max(0, Math.round((now - then) / 86400000));
+};
+
+window.KuBi.isLapsed = function (rec) {
+  return window.KuBi.daysSinceVisit(rec) >= window.KuBi.LAPSED_AFTER_DAYS;
+};
+
+// Longest silence first — the person the clinic is closest to losing.
+window.KuBi.lapsedPatients = function () {
+  return (window.KuBi.PATIENT_RECORDS || [])
+    .filter(window.KuBi.isLapsed)
+    .sort(function (a, b) { return window.KuBi.daysSinceVisit(b) - window.KuBi.daysSinceVisit(a); });
+};

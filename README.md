@@ -13,7 +13,7 @@ React is bundled in.
 ```bash
 npm install
 npm run build     # compiles src/ -> KuBi.html
-npm test          # builds, then runs 61 journey checks + 7 bundle checks
+npm test          # builds, then runs 94 journey checks + 7 bundle checks
 ```
 
 `KuBi.html` is generated. Edit `src/`, never the bundle.
@@ -28,10 +28,11 @@ src/
   mockData.js          Employees, attendance, operatingDate() helper
   clinicReadiness.js   Opening checklist, room mapping
   clinicClosing.js     11-item closing gate (5 critical)
-  patientCheckIn.js    Appointments, journey stages, follow-ups
+  patientCheckIn.js    Appointments, journey stages, follow-ups, lapsed
   treatmentChecklists.js  27 procedures, before/after, closure gate
   attention.js         What needs attention, with owner + reason
   equipment.js         Equipment status list
+  repairs.js           Building faults, open until fixed
   sterilization.js     Instrument pack chain
   inventory.js         Materials mapped to procedures
   nextAction.js        THE PRIORITY ENGINE — one action from 8 states

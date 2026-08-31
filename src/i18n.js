@@ -8,7 +8,6 @@ window.KuBi.STRINGS = {
   'login.enterPin': { en: 'Enter your PIN', hi: 'अपना पिन दर्ज करें' },
   'login.signIn': { en: 'Sign in', hi: 'साइन इन करें' },
   'login.error': { en: 'PIN not recognized. Try again.', hi: 'पिन सही नहीं है। दोबारा कोशिश करें।' },
-  'nav.dashboard': { en: 'Dashboard', hi: 'डैशबोर्ड' },
   'nav.today': { en: 'Today', hi: 'आज' },
   'nav.clinic': { en: 'Clinic', hi: 'क्लिनिक' },
   'nav.patients': { en: 'Patient Journey', hi: 'मरीज़ की यात्रा' },
@@ -322,11 +321,6 @@ window.KuBi.STRINGS = {
   'own.closed': { en: 'closed', hi: 'बंद' },
   'own.exceptions': { en: 'Exceptions', hi: 'समस्याएं' },
 
-  'dashboard.title': { en: 'Dashboard', hi: 'डैशबोर्ड' },
-  'dashboard.openingLabel': { en: 'Clinic Opening', hi: 'क्लिनिक खुलने का समय' },
-  'dashboard.readinessLabel': { en: 'Clinic Readiness', hi: 'क्लिनिक तैयारी' },
-  'dashboard.clickForPending': { en: 'Click to see pending tasks', hi: 'बाकी काम देखने के लिए क्लिक करें' },
-  'dashboard.chairsLabel': { en: 'Chairs', hi: 'चेयर' },
   'dashboard.chairEmpty': { en: 'No patient', hi: 'कोई मरीज़ नहीं' },
 
   'checkin.title': { en: 'Patient Check-In', hi: 'मरीज़ चेक-इन' },

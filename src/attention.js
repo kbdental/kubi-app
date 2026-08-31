@@ -8,7 +8,7 @@
 
 window.KuBi = window.KuBi || {};
 
-window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfter, readinessChecked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs) {
+window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfter, readinessChecked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived) {
   const items = [];
   const now = Date.now();
   const afterChecked = treatmentCheckedAfter || {};
@@ -27,6 +27,7 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
     treatmentNotReady: 'lead_dental_assistant',
     caseNotClosed: 'lead_dentist',
     repairOpen: 'clinic_manager',
+    labLate: 'front_desk_receptionist',
   };
 
   // ---- CLINIC: rooms not ready ----------------------------------------
@@ -80,6 +81,18 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
         items.push({ id: 'postop-' + a.id, area: 'treatment', apptId: a.id, subtab: 'after', kind: 'caseNotClosed', patient: a.patient, procedure: a.procedureType, owner: OWNER.caseNotClosed });
       }
     }
+  });
+
+  // ---- LAB: promised, and still not here ------------------------------
+  // Chased on the day it was promised, not on the day the patient turns
+  // up for it — by then it is too late to be useful.
+  window.KuBi.labCases(labReceived).forEach(function (c) {
+    if (!window.KuBi.labIsLate(c)) return;
+    items.push({
+      id: 'lab-' + c.apptId, area: 'patients', subtab: 'lab',
+      kind: 'labLate', patient: c.patient, item: c.item, due: c.due,
+      owner: OWNER.labLate,
+    });
   });
 
   // ---- BUILDING: a fault nobody has fixed -----------------------------

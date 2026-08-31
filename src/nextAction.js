@@ -21,6 +21,7 @@ window.KuBi.nextAction = function (ctx) {
   const readiness = ctx.readinessChecked || {};
   const equipment = ctx.equipmentStatus || {};
   const sterPacks = ctx.sterPacks || [];
+  const labReceived = ctx.labReceived || {};
 
   // 0. Clinic not open — nothing else matters yet.
   if (!clinicStatus.open) {
@@ -99,11 +100,11 @@ window.KuBi.nextAction = function (ctx) {
     return a.status !== 'done' && a.status !== 'no_show' && !closed[a.id];
   });
   const blockedSupply = upcoming.find(function (a) {
-    const sup = window.KuBi.procedureSupplyStatus(a.procedureType, a.id);
+    const sup = window.KuBi.procedureSupplyStatus(a.procedureType, a.id, labReceived);
     return !sup.ok;
   });
   if (blockedSupply) {
-    const sup = window.KuBi.procedureSupplyStatus(blockedSupply.procedureType, blockedSupply.id);
+    const sup = window.KuBi.procedureSupplyStatus(blockedSupply.procedureType, blockedSupply.id, labReceived);
     return {
       kind: 'supplyMissing', appt: blockedSupply,
       missing: sup.blocking.map(function (m) { return m.name; }),

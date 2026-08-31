@@ -101,6 +101,7 @@ function Shell({ user, onLogout, lang, setLang }) {
   // preference — derived status would hide real faults behind checkboxes.
   const [equipmentStatus, setEquipmentStatus] = React.useState(window.KuBi.EQUIPMENT_STATUS_SEED || {});
   const [repairs, setRepairs] = React.useState(window.KuBi.REPAIRS_SEED || []);
+  const [labReceived, setLabReceived] = React.useState({});
   const [sterPacks, setSterPacks] = React.useState(window.KuBi.STER_PACKS || []);
 
   const ActiveComponent = activeArea ? AREAS[activeArea].component() : null;
@@ -121,7 +122,7 @@ function Shell({ user, onLogout, lang, setLang }) {
       closingChecked: closingChecked,
       repairs: repairs,
     });
-  }, [appointments, procedureState, closedCases, treatmentChecked, treatmentCheckedAfter, readinessChecked, equipmentStatus, sterPacks, clinicStatus, closingChecked, repairs]);
+  }, [appointments, procedureState, closedCases, treatmentChecked, treatmentCheckedAfter, readinessChecked, equipmentStatus, sterPacks, clinicStatus, closingChecked, repairs, labReceived]);
 
   function goTo(area, subtab, apptId, room) {
     setActiveArea(area);
@@ -143,6 +144,7 @@ function Shell({ user, onLogout, lang, setLang }) {
       clinicStatus: clinicStatus,
       closingChecked: closingChecked,
       repairs: repairs,
+      labReceived: labReceived,
     }, true);
     setClinicStatus({ open: false, by: user.name, at: new Date() });
     setClosingChecked({});
@@ -201,6 +203,14 @@ function Shell({ user, onLogout, lang, setLang }) {
 
   // Repairs live until somebody fixes them, so raising one appends and
   // fixing one stamps it — neither ever removes the record.
+  function markLabReceived(apptId) {
+    setLabReceived(function (prev) {
+      const next = Object.assign({}, prev);
+      next[apptId] = true;
+      return next;
+    });
+  }
+
   function reportRepair(kind, place, what) {
     setRepairs(function (prev) {
       return prev.concat([{
@@ -271,6 +281,7 @@ function Shell({ user, onLogout, lang, setLang }) {
           equipmentStatus={equipmentStatus}
           sterPacks={sterPacks}
           repairs={repairs}
+          labReceived={labReceived}
           goTo={goTo}
         />
       );
@@ -294,6 +305,7 @@ function Shell({ user, onLogout, lang, setLang }) {
           sterPacks={sterPacks}
           onAdvancePack={advancePack}
           repairs={repairs}
+          labReceived={labReceived}
           onReportRepair={reportRepair}
           onRepairFixed={markRepairFixed}
           appointments={appointments}
@@ -310,6 +322,8 @@ function Shell({ user, onLogout, lang, setLang }) {
           goTo={goTo}
           initialApptId={navTarget.apptId}
           initialSubtab={navTarget.subtab}
+          labReceived={labReceived}
+          onLabReceived={markLabReceived}
         />
       );
     }
@@ -347,6 +361,7 @@ function Shell({ user, onLogout, lang, setLang }) {
           sterPacks={sterPacks}
           closingChecked={closingChecked}
           repairs={repairs}
+          labReceived={labReceived}
           initialSubtab={navTarget.subtab}
           goTo={goTo}
         />

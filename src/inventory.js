@@ -41,11 +41,59 @@ window.KuBi.PROCEDURE_MATERIALS = {
   'Consultation':        [],
 };
 
+// Dates for the seeded lab cases, relative to today so the screen is never
+// stale on a Monday morning.
+function _labDay(offset) {
+  return window.KuBi.operatingDate(new Date(Date.now() + offset * 86400000));
+}
+
 // Lab cases are a separate kind of dependency: not stock, but "has the
 // lab work come back for this specific patient?"
+// `received` is what blocks an appointment; `due` is what lets the case be
+// chased BEFORE the patient is sitting in the waiting room. A case with no
+// due date is not overdue — unknown is not a deadline.
 window.KuBi.LAB_CASES = {
-  A2: { received: true,  item: s('Crown', 'क्राउन') },
-  A4: { received: true,  item: s('Implant prosthesis', 'इम्प्लांट प्रोस्थेसिस') },
+  A2: { received: true,  item: s('Crown', 'क्राउन'),
+        patient: 'Meera Reddy', lab: 'Sharma Dental Lab', sent: _labDay(-6), due: _labDay(-1) },
+  A4: { received: true,  item: s('Implant prosthesis', 'इम्प्लांट प्रोस्थेसिस'),
+        patient: 'Devika Nair', lab: 'Precision Ceramics', sent: _labDay(-9), due: _labDay(0) },
+  A7: { received: false, item: s('Crown', 'क्राउन'),
+        patient: 'Vikram Shah', lab: 'Sharma Dental Lab', sent: _labDay(-8), due: _labDay(-2) },
+  A8: { received: false, item: s('Denture — try-in', 'डेन्चर — ट्राई-इन'),
+        patient: 'Leela Menon', lab: 'Precision Ceramics', sent: _labDay(-3), due: _labDay(2) },
+};
+
+// Every lab case, as a list, newest deadline last. Shaped for a screen
+// rather than for the supply check that LAB_CASES was written for.
+// Has this case arrived? The seed says what was true when the day loaded;
+// `received` (held by the app) says what the clinic has ticked since. One
+// answer, used by the Lab screen and the supply check alike.
+window.KuBi.labArrived = function (apptId, received) {
+  const c = window.KuBi.LAB_CASES[apptId];
+  if (!c) return true;
+  if (received && Object.prototype.hasOwnProperty.call(received, apptId)) return !!received[apptId];
+  return !!c.received;
+};
+
+window.KuBi.labCases = function (received) {
+  return Object.keys(window.KuBi.LAB_CASES).map(function (apptId) {
+    const c = window.KuBi.LAB_CASES[apptId];
+    return Object.assign({ apptId: apptId }, c, { received: window.KuBi.labArrived(apptId, received) });
+  }).sort(function (a, b) { return String(a.due || '').localeCompare(String(b.due || '')); });
+};
+
+// Late means: still not here, and the day it was promised has passed.
+// Derived every time, never stored — a stored flag goes stale overnight.
+window.KuBi.labIsLate = function (c) {
+  return !c.received && !!c.due && c.due < window.KuBi.operatingDate();
+};
+
+window.KuBi.labIsDueToday = function (c) {
+  return !c.received && !!c.due && c.due === window.KuBi.operatingDate();
+};
+
+window.KuBi.labPending = function (received) {
+  return window.KuBi.labCases(received).filter(function (c) { return !c.received; });
 };
 
 window.KuBi.materialById = function (id) {
@@ -55,7 +103,7 @@ window.KuBi.materialById = function (id) {
 // Can this procedure be performed? Returns blocking (out of stock) and
 // warning (low) materials separately — low stock shouldn't stop today's
 // treatment, but it should be visible.
-window.KuBi.procedureSupplyStatus = function (procedureType, apptId) {
+window.KuBi.procedureSupplyStatus = function (procedureType, apptId, received) {
   const needed = window.KuBi.PROCEDURE_MATERIALS[procedureType] || [];
   const blocking = [];
   const low = [];
@@ -69,7 +117,7 @@ window.KuBi.procedureSupplyStatus = function (procedureType, apptId) {
 
   // Lab case, where one applies to this appointment.
   const lab = apptId ? window.KuBi.LAB_CASES[apptId] : null;
-  const labMissing = !!(lab && !lab.received);
+  const labMissing = !!(lab && !window.KuBi.labArrived(apptId, received));
 
   return {
     ok: blocking.length === 0 && !labMissing,

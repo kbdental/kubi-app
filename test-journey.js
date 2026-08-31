@@ -151,6 +151,17 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   await step(() => click(Array.from(doc().querySelectorAll('.toggle-btn')).find(b => /Follow-up/.test(b.textContent))));
   check('Follow-up list renders', /Sanjay|Vikram|due back/i.test(text()));
 
+  // 12b. LAB — what is out at the lab, and what is late
+  await step(() => click(Array.from(doc().querySelectorAll('.sub-tab-row .toggle-btn')).find(b => b.textContent.trim() === 'Lab')));
+  check('Lab tab renders', /Lab work|out at the lab/i.test(text()));
+  check('Late lab case is flagged', /Late/i.test(text()) && /Vikram Shah/.test(text()));
+  const labRows = () => doc().querySelectorAll('.fu-row').length;
+  const awaitedBefore = Array.from(doc().querySelectorAll('.fu-row')).filter(r => /Mark received/.test(r.textContent)).length;
+  await step(() => click(Array.from(doc().querySelectorAll('.fu-row')).find(r => /Vikram Shah/.test(r.textContent)).querySelector('button')));
+  const awaitedAfter = Array.from(doc().querySelectorAll('.fu-row')).filter(r => /Mark received/.test(r.textContent)).length;
+  check('Marking a case received clears it', awaitedAfter === awaitedBefore - 1 && labRows() > 0,
+        awaitedBefore + ' -> ' + awaitedAfter + ' awaited');
+
   // 13. TREATMENT — before checklist
   await step(() => click(navByText(/Treatment/)));
   check('Treatment rows render', doc().querySelectorAll('.prep-appt-row').length > 0,
@@ -380,6 +391,27 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   check('A fault open for days needs attention', attnFor(oldFault).length === 1);
   check('A fixed fault is never chased', attnFor(fixedFault).length === 0);
   check('Repair attention names an owner', (attnFor(oldFault)[0] || {}).owner === 'clinic_manager');
+
+  // 26. LAB — late is derived from the promised date, and one truth
+  //     serves both the lab screen and the supply check.
+  const labLate = c => K.labIsLate(c);
+  const cases = K.labCases({});
+  check('Lab cases carry a promised date', cases.every(c => !!c.due), cases.length + ' cases');
+  check('A late case is one still awaited past its date',
+        cases.filter(labLate).every(c => !c.received && c.due < K.operatingDate()));
+  const lateIds = cases.filter(labLate).map(c => c.apptId);
+  check('Late cases reach the attention list',
+        K.computeAttentionItems([], {}, {}, openClinic, {}, {}, {}, [], {})
+         .filter(i => i.kind === 'labLate').length === lateIds.length,
+        lateIds.join(', ') || 'none');
+  if (lateIds.length) {
+    const cleared = { };
+    cleared[lateIds[0]] = true;
+    check('Marking received stops it being late',
+          !K.labCases(cleared).find(c => c.apptId === lateIds[0] && labLate(c)));
+    check('Supply check agrees with the lab screen',
+          K.procedureSupplyStatus('Crown', lateIds[0], cleared).labMissing === false);
+  }
 
   // SUMMARY
   await step(() => {}, 150);

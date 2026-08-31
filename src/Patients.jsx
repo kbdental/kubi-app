@@ -10,7 +10,7 @@ function pick(field, lang) {
   return field[lang] || field.en;
 }
 
-window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setStatus, goTo, initialApptId, initialSubtab }) {
+window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setStatus, goTo, initialApptId, initialSubtab, labReceived, onLabReceived }) {
   const t = window.KuBi.t;
   const RoleBadge = window.KuBi.RoleBadge;
   const readiness = window.KuBi.PRE_ARRIVAL_READINESS;
@@ -60,7 +60,53 @@ window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setS
       <div className="view-toggle sub-tab-row">
         <button className={'toggle-btn' + (subtab === 'journey' ? ' toggle-btn-active' : '')} onClick={function () { setSubtab('journey'); }}>{t('patients.tab.journey', lang)}</button>
         <button className={'toggle-btn' + (subtab === 'followup' ? ' toggle-btn-active' : '')} onClick={function () { setSubtab('followup'); }}>{t('patients.tab.followup', lang)}</button>
+        <button className={'toggle-btn' + (subtab === 'lab' ? ' toggle-btn-active' : '')} onClick={function () { setSubtab('lab'); }}>{t('patients.tab.lab', lang)}</button>
       </div>
+
+      {/* Lab work belongs with patients, not with stock: the question is
+          always "has this patient's crown come back?", never "how many
+          crowns do we have?". */}
+      {subtab === 'lab' ? (function () {
+        const cases = window.KuBi.labCases(labReceived);
+        const pending = window.KuBi.labPending(labReceived);
+        return (
+          <div className="card">
+            <div className="card-title">
+              {t('lab.title', lang)}
+              {pending.length ? <span className="repair-count">{pending.length} {t('lab.pendingCount', lang)}</span> : null}
+            </div>
+            <p className="module-sub">{t('lab.subtitle', lang)}</p>
+            {cases.length === 0 ? (
+              <p className="module-sub">{t('lab.none', lang)}</p>
+            ) : (
+              <ul className="fu-list">
+                {cases.map(function (c) {
+                  const late = window.KuBi.labIsLate(c);
+                  const today = window.KuBi.labIsDueToday(c);
+                  return (
+                    <li key={c.apptId} className={'fu-row' + (late ? ' fu-overdue' : '')}>
+                      <span className="fu-dot">{c.received ? '🟢' : late ? '🔴' : '🟡'}</span>
+                      <span className="fu-patient">{c.patient}</span>
+                      <span className="fu-reason">
+                        {(c.item[lang] || c.item.en)}{c.lab ? ' · ' + c.lab : ''}
+                      </span>
+                      <span className="fu-due">
+                        {c.received ? t('lab.received', lang)
+                          : late ? t('lab.late', lang) + ' · ' + t('lab.due', lang) + ' ' + c.due
+                          : today ? t('lab.dueToday', lang)
+                          : t('lab.due', lang) + ' ' + c.due}
+                      </span>
+                      {!c.received ? (
+                        <button className="rowbtn" onClick={function () { onLabReceived(c.apptId); }}>{t('lab.markReceived', lang)}</button>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+      );
+      })() : null}
 
       {subtab === 'followup' ? (
         <div className="card">

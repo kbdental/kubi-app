@@ -744,7 +744,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 31 Aug 2026, 10:37 am';
+  window.KuBi.BUILD_STAMP = 'Build: 31 Aug 2026, 10:41 am';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -34147,6 +34147,58 @@ window.KuBi.STRINGS = {
     en: 'Overdue',
     hi: 'समय बीत गया'
   },
+  'patients.tab.lab': {
+    en: 'Lab',
+    hi: 'लैब'
+  },
+  'lab.title': {
+    en: 'Lab work',
+    hi: 'लैब का काम'
+  },
+  'lab.subtitle': {
+    en: 'What is out at the lab, and when it was promised.',
+    hi: 'लैब में क्या भेजा है, और कब आने का वादा था।'
+  },
+  'lab.none': {
+    en: 'Nothing is out at the lab.',
+    hi: 'लैब में कुछ नहीं भेजा है।'
+  },
+  'lab.sent': {
+    en: 'Sent',
+    hi: 'भेजा'
+  },
+  'lab.due': {
+    en: 'Promised',
+    hi: 'वादा'
+  },
+  'lab.late': {
+    en: 'Late',
+    hi: 'देर हो गई'
+  },
+  'lab.dueToday': {
+    en: 'Due today',
+    hi: 'आज आना है'
+  },
+  'lab.received': {
+    en: 'Received',
+    hi: 'आ गया'
+  },
+  'lab.awaited': {
+    en: 'Not here yet',
+    hi: 'अभी नहीं आया'
+  },
+  'lab.markReceived': {
+    en: 'Mark received',
+    hi: 'आ गया — दर्ज करें'
+  },
+  'lab.pendingCount': {
+    en: 'awaited',
+    hi: 'बाकी'
+  },
+  'attention.labLate': {
+    en: 'lab work is late',
+    hi: 'लैब का काम देर से है'
+  },
   'followup.contacted': {
     en: 'Called',
     hi: 'कॉल किया'
@@ -36706,7 +36758,7 @@ window.KuBi.closureGate = function (procedureType, checkedMap) {
 // enough context (apptId, subtab, room) to jump directly to the problem.
 
 window.KuBi = window.KuBi || {};
-window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfter, readinessChecked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs) {
+window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfter, readinessChecked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived) {
   const items = [];
   const now = Date.now();
   const afterChecked = treatmentCheckedAfter || {};
@@ -36724,7 +36776,8 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
     noShow: 'front_desk_receptionist',
     treatmentNotReady: 'lead_dental_assistant',
     caseNotClosed: 'lead_dentist',
-    repairOpen: 'clinic_manager'
+    repairOpen: 'clinic_manager',
+    labLate: 'front_desk_receptionist'
   };
 
   // ---- CLINIC: rooms not ready ----------------------------------------
@@ -36817,6 +36870,23 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
         });
       }
     }
+  });
+
+  // ---- LAB: promised, and still not here ------------------------------
+  // Chased on the day it was promised, not on the day the patient turns
+  // up for it — by then it is too late to be useful.
+  window.KuBi.labCases(labReceived).forEach(function (c) {
+    if (!window.KuBi.labIsLate(c)) return;
+    items.push({
+      id: 'lab-' + c.apptId,
+      area: 'patients',
+      subtab: 'lab',
+      kind: 'labLate',
+      patient: c.patient,
+      item: c.item,
+      due: c.due,
+      owner: OWNER.labLate
+    });
   });
 
   // ---- BUILDING: a fault nobody has fixed -----------------------------
@@ -37187,17 +37257,88 @@ window.KuBi.PROCEDURE_MATERIALS = {
   'Consultation': []
 };
 
+// Dates for the seeded lab cases, relative to today so the screen is never
+// stale on a Monday morning.
+function _labDay(offset) {
+  return window.KuBi.operatingDate(new Date(Date.now() + offset * 86400000));
+}
+
 // Lab cases are a separate kind of dependency: not stock, but "has the
 // lab work come back for this specific patient?"
+// `received` is what blocks an appointment; `due` is what lets the case be
+// chased BEFORE the patient is sitting in the waiting room. A case with no
+// due date is not overdue — unknown is not a deadline.
 window.KuBi.LAB_CASES = {
   A2: {
     received: true,
-    item: s('Crown', 'क्राउन')
+    item: s('Crown', 'क्राउन'),
+    patient: 'Meera Reddy',
+    lab: 'Sharma Dental Lab',
+    sent: _labDay(-6),
+    due: _labDay(-1)
   },
   A4: {
     received: true,
-    item: s('Implant prosthesis', 'इम्प्लांट प्रोस्थेसिस')
+    item: s('Implant prosthesis', 'इम्प्लांट प्रोस्थेसिस'),
+    patient: 'Devika Nair',
+    lab: 'Precision Ceramics',
+    sent: _labDay(-9),
+    due: _labDay(0)
+  },
+  A7: {
+    received: false,
+    item: s('Crown', 'क्राउन'),
+    patient: 'Vikram Shah',
+    lab: 'Sharma Dental Lab',
+    sent: _labDay(-8),
+    due: _labDay(-2)
+  },
+  A8: {
+    received: false,
+    item: s('Denture — try-in', 'डेन्चर — ट्राई-इन'),
+    patient: 'Leela Menon',
+    lab: 'Precision Ceramics',
+    sent: _labDay(-3),
+    due: _labDay(2)
   }
+};
+
+// Every lab case, as a list, newest deadline last. Shaped for a screen
+// rather than for the supply check that LAB_CASES was written for.
+// Has this case arrived? The seed says what was true when the day loaded;
+// `received` (held by the app) says what the clinic has ticked since. One
+// answer, used by the Lab screen and the supply check alike.
+window.KuBi.labArrived = function (apptId, received) {
+  const c = window.KuBi.LAB_CASES[apptId];
+  if (!c) return true;
+  if (received && Object.prototype.hasOwnProperty.call(received, apptId)) return !!received[apptId];
+  return !!c.received;
+};
+window.KuBi.labCases = function (received) {
+  return Object.keys(window.KuBi.LAB_CASES).map(function (apptId) {
+    const c = window.KuBi.LAB_CASES[apptId];
+    return Object.assign({
+      apptId: apptId
+    }, c, {
+      received: window.KuBi.labArrived(apptId, received)
+    });
+  }).sort(function (a, b) {
+    return String(a.due || '').localeCompare(String(b.due || ''));
+  });
+};
+
+// Late means: still not here, and the day it was promised has passed.
+// Derived every time, never stored — a stored flag goes stale overnight.
+window.KuBi.labIsLate = function (c) {
+  return !c.received && !!c.due && c.due < window.KuBi.operatingDate();
+};
+window.KuBi.labIsDueToday = function (c) {
+  return !c.received && !!c.due && c.due === window.KuBi.operatingDate();
+};
+window.KuBi.labPending = function (received) {
+  return window.KuBi.labCases(received).filter(function (c) {
+    return !c.received;
+  });
 };
 window.KuBi.materialById = function (id) {
   return window.KuBi.MATERIALS.find(function (m) {
@@ -37208,7 +37349,7 @@ window.KuBi.materialById = function (id) {
 // Can this procedure be performed? Returns blocking (out of stock) and
 // warning (low) materials separately — low stock shouldn't stop today's
 // treatment, but it should be visible.
-window.KuBi.procedureSupplyStatus = function (procedureType, apptId) {
+window.KuBi.procedureSupplyStatus = function (procedureType, apptId, received) {
   const needed = window.KuBi.PROCEDURE_MATERIALS[procedureType] || [];
   const blocking = [];
   const low = [];
@@ -37220,7 +37361,7 @@ window.KuBi.procedureSupplyStatus = function (procedureType, apptId) {
 
   // Lab case, where one applies to this appointment.
   const lab = apptId ? window.KuBi.LAB_CASES[apptId] : null;
-  const labMissing = !!(lab && !lab.received);
+  const labMissing = !!(lab && !window.KuBi.labArrived(apptId, received));
   return {
     ok: blocking.length === 0 && !labMissing,
     blocking: blocking,
@@ -37253,6 +37394,7 @@ window.KuBi.nextAction = function (ctx) {
   const readiness = ctx.readinessChecked || {};
   const equipment = ctx.equipmentStatus || {};
   const sterPacks = ctx.sterPacks || [];
+  const labReceived = ctx.labReceived || {};
 
   // 0. Clinic not open — nothing else matters yet.
   if (!clinicStatus.open) {
@@ -37361,11 +37503,11 @@ window.KuBi.nextAction = function (ctx) {
     return a.status !== 'done' && a.status !== 'no_show' && !closed[a.id];
   });
   const blockedSupply = upcoming.find(function (a) {
-    const sup = window.KuBi.procedureSupplyStatus(a.procedureType, a.id);
+    const sup = window.KuBi.procedureSupplyStatus(a.procedureType, a.id, labReceived);
     return !sup.ok;
   });
   if (blockedSupply) {
-    const sup = window.KuBi.procedureSupplyStatus(blockedSupply.procedureType, blockedSupply.id);
+    const sup = window.KuBi.procedureSupplyStatus(blockedSupply.procedureType, blockedSupply.id, labReceived);
     return {
       kind: 'supplyMissing',
       appt: blockedSupply,
@@ -38039,7 +38181,7 @@ window.KuBi.buildSnapshot = function (ctx, closedProperly) {
   const d = window.KuBi.misToday(ctx);
   const readiness = window.KuBi.readinessStats(ctx.readinessChecked || {});
   const counts = window.KuBi.attendanceCounts();
-  const attention = window.KuBi.computeAttentionItems(ctx.appointments, ctx.treatmentCheckedAfter, ctx.readinessChecked, ctx.clinicStatus, ctx.procedureState, ctx.closedCases, ctx.treatmentChecked, ctx.repairs);
+  const attention = window.KuBi.computeAttentionItems(ctx.appointments, ctx.treatmentCheckedAfter, ctx.readinessChecked, ctx.clinicStatus, ctx.procedureState, ctx.closedCases, ctx.treatmentChecked, ctx.repairs, ctx.labReceived);
   return {
     date: window.KuBi.operatingDate(),
     closedProperly: !!closedProperly,
@@ -38336,12 +38478,13 @@ window.KuBi.Today = function Today({
   equipmentStatus,
   sterPacks,
   repairs,
+  labReceived,
   goTo
 }) {
   const t = window.KuBi.t;
   const [attentionOpen, setAttentionOpen] = React.useState(false);
   const readiness = window.KuBi.readinessStats(checked);
-  const attentionItems = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs);
+  const attentionItems = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived);
   // Five, and never a sixth. Past that it stops being "what needs
   // attention" and becomes a to-do list, which staff stop reading. The
   // count above still reports the true total.
@@ -38358,6 +38501,7 @@ window.KuBi.Today = function Today({
     if (item.kind === 'treatmentNotReady') return item.patient + ' — ' + t('attention.treatmentNotReady', lang) + (item.missing && item.missing.length ? ': ' + item.missing[0] : '');
     if (item.kind === 'caseNotClosed') return item.patient + ' — ' + t('attention.caseNotClosed', lang);
     if (item.kind === 'repairOpen') return item.what + ' — ' + t('attention.repairOpen', lang) + ' (' + item.days + ' ' + t('repair.days', lang) + ')';
+    if (item.kind === 'labLate') return item.patient + ' — ' + (item.item[lang] || item.item.en) + ' ' + t('attention.labLate', lang);
     return '';
   }
   function areaLabel(area) {
@@ -38377,7 +38521,8 @@ window.KuBi.Today = function Today({
       clinicStatus: clinicStatus,
       readinessChecked: checked,
       equipmentStatus: equipmentStatus,
-      sterPacks: sterPacks
+      sterPacks: sterPacks,
+      labReceived: labReceived
     });
     if (na.kind === 'allClear') return null;
     let headline = '';
@@ -39284,7 +39429,9 @@ window.KuBi.Patients = function Patients({
   setStatus,
   goTo,
   initialApptId,
-  initialSubtab
+  initialSubtab,
+  labReceived,
+  onLabReceived
 }) {
   const t = window.KuBi.t;
   const RoleBadge = window.KuBi.RoleBadge;
@@ -39338,7 +39485,48 @@ window.KuBi.Patients = function Patients({
     onClick: function () {
       setSubtab('followup');
     }
-  }, t('patients.tab.followup', lang))), subtab === 'followup' ? /*#__PURE__*/React.createElement("div", {
+  }, t('patients.tab.followup', lang)), /*#__PURE__*/React.createElement("button", {
+    className: 'toggle-btn' + (subtab === 'lab' ? ' toggle-btn-active' : ''),
+    onClick: function () {
+      setSubtab('lab');
+    }
+  }, t('patients.tab.lab', lang))), subtab === 'lab' ? function () {
+    const cases = window.KuBi.labCases(labReceived);
+    const pending = window.KuBi.labPending(labReceived);
+    return /*#__PURE__*/React.createElement("div", {
+      className: "card"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "card-title"
+    }, t('lab.title', lang), pending.length ? /*#__PURE__*/React.createElement("span", {
+      className: "repair-count"
+    }, pending.length, " ", t('lab.pendingCount', lang)) : null), /*#__PURE__*/React.createElement("p", {
+      className: "module-sub"
+    }, t('lab.subtitle', lang)), cases.length === 0 ? /*#__PURE__*/React.createElement("p", {
+      className: "module-sub"
+    }, t('lab.none', lang)) : /*#__PURE__*/React.createElement("ul", {
+      className: "fu-list"
+    }, cases.map(function (c) {
+      const late = window.KuBi.labIsLate(c);
+      const today = window.KuBi.labIsDueToday(c);
+      return /*#__PURE__*/React.createElement("li", {
+        key: c.apptId,
+        className: 'fu-row' + (late ? ' fu-overdue' : '')
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "fu-dot"
+      }, c.received ? '🟢' : late ? '🔴' : '🟡'), /*#__PURE__*/React.createElement("span", {
+        className: "fu-patient"
+      }, c.patient), /*#__PURE__*/React.createElement("span", {
+        className: "fu-reason"
+      }, c.item[lang] || c.item.en, c.lab ? ' · ' + c.lab : ''), /*#__PURE__*/React.createElement("span", {
+        className: "fu-due"
+      }, c.received ? t('lab.received', lang) : late ? t('lab.late', lang) + ' · ' + t('lab.due', lang) + ' ' + c.due : today ? t('lab.dueToday', lang) : t('lab.due', lang) + ' ' + c.due), !c.received ? /*#__PURE__*/React.createElement("button", {
+        className: "rowbtn",
+        onClick: function () {
+          onLabReceived(c.apptId);
+        }
+      }, t('lab.markReceived', lang)) : null);
+    })));
+  }() : null, subtab === 'followup' ? /*#__PURE__*/React.createElement("div", {
     className: "card"
   }, /*#__PURE__*/React.createElement("div", {
     className: "card-title"
@@ -40301,6 +40489,7 @@ window.KuBi.Management = function Management({
   closingChecked,
   initialSubtab,
   repairs,
+  labReceived,
   goTo
 }) {
   const t = window.KuBi.t;
@@ -40312,7 +40501,7 @@ window.KuBi.Management = function Management({
 
   // ---- derived counts --------------------------------------------------
   const readiness = window.KuBi.readinessStats(checked);
-  const attention = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs);
+  const attention = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived);
   const scheduled = appointments.filter(function (a) {
     return a.status !== 'no_show';
   }).length;
@@ -40355,6 +40544,7 @@ window.KuBi.Management = function Management({
     if (item.kind === 'treatmentNotReady') return item.patient + ' — ' + t('attention.treatmentNotReady', lang);
     if (item.kind === 'caseNotClosed') return item.patient + ' — ' + t('attention.caseNotClosed', lang);
     if (item.kind === 'repairOpen') return item.what + ' — ' + t('attention.repairOpen', lang) + ' (' + item.days + ' ' + t('repair.days', lang) + ')';
+    if (item.kind === 'labLate') return item.patient + ' — ' + (item.item[lang] || item.item.en) + ' ' + t('attention.labLate', lang);
     return '';
   }
   function Metric({
@@ -40651,6 +40841,7 @@ function Shell({
   // preference — derived status would hide real faults behind checkboxes.
   const [equipmentStatus, setEquipmentStatus] = React.useState(window.KuBi.EQUIPMENT_STATUS_SEED || {});
   const [repairs, setRepairs] = React.useState(window.KuBi.REPAIRS_SEED || []);
+  const [labReceived, setLabReceived] = React.useState({});
   const [sterPacks, setSterPacks] = React.useState(window.KuBi.STER_PACKS || []);
   const ActiveComponent = activeArea ? AREAS[activeArea].component() : null;
 
@@ -40670,7 +40861,7 @@ function Shell({
       closingChecked: closingChecked,
       repairs: repairs
     });
-  }, [appointments, procedureState, closedCases, treatmentChecked, treatmentCheckedAfter, readinessChecked, equipmentStatus, sterPacks, clinicStatus, closingChecked, repairs]);
+  }, [appointments, procedureState, closedCases, treatmentChecked, treatmentCheckedAfter, readinessChecked, equipmentStatus, sterPacks, clinicStatus, closingChecked, repairs, labReceived]);
   function goTo(area, subtab, apptId, room) {
     setActiveArea(area);
     setNavTarget({
@@ -40699,7 +40890,8 @@ function Shell({
       sterPacks: sterPacks,
       clinicStatus: clinicStatus,
       closingChecked: closingChecked,
-      repairs: repairs
+      repairs: repairs,
+      labReceived: labReceived
     }, true);
     setClinicStatus({
       open: false,
@@ -40777,6 +40969,13 @@ function Shell({
 
   // Repairs live until somebody fixes them, so raising one appends and
   // fixing one stamps it — neither ever removes the record.
+  function markLabReceived(apptId) {
+    setLabReceived(function (prev) {
+      const next = Object.assign({}, prev);
+      next[apptId] = true;
+      return next;
+    });
+  }
   function reportRepair(kind, place, what) {
     setRepairs(function (prev) {
       return prev.concat([{
@@ -40860,6 +41059,7 @@ function Shell({
         equipmentStatus: equipmentStatus,
         sterPacks: sterPacks,
         repairs: repairs,
+        labReceived: labReceived,
         goTo: goTo
       });
     }
@@ -40881,6 +41081,7 @@ function Shell({
         sterPacks: sterPacks,
         onAdvancePack: advancePack,
         repairs: repairs,
+        labReceived: labReceived,
         onReportRepair: reportRepair,
         onRepairFixed: markRepairFixed,
         appointments: appointments
@@ -40894,7 +41095,9 @@ function Shell({
         setStatus: setApptStatus,
         goTo: goTo,
         initialApptId: navTarget.apptId,
-        initialSubtab: navTarget.subtab
+        initialSubtab: navTarget.subtab,
+        labReceived: labReceived,
+        onLabReceived: markLabReceived
       });
     }
     if (activeArea === 'treatment') {
@@ -40928,6 +41131,7 @@ function Shell({
         sterPacks: sterPacks,
         closingChecked: closingChecked,
         repairs: repairs,
+        labReceived: labReceived,
         initialSubtab: navTarget.subtab,
         goTo: goTo
       });

@@ -614,6 +614,32 @@
   .today-secondary .card { padding: 15px 18px; }
   .today-secondary .today-home-name { font-weight: 500; }
 
+  /* ---------- Repairs ---------- */
+  .repair-card { margin-bottom: 16px; }
+  .repair-count {
+    margin-left: 8px; font-size: 11.5px; font-weight: 700; color: var(--coral);
+    background: rgba(193,80,46,0.10); padding: 2px 8px; border-radius: 999px;
+  }
+  .repair-list { list-style: none; margin: 12px 0 0; padding: 0; }
+  .repair-row {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 2px; border-bottom: 1px solid var(--line);
+  }
+  .repair-row:last-child { border-bottom: none; }
+  .repair-body { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .repair-what { font-weight: 600; font-size: 13.5px; }
+  .repair-meta { font-size: 12px; color: var(--ink-soft); }
+  .repair-row-late .repair-what { color: var(--coral); }
+  .repair-open-btn { margin-top: 14px; }
+  .repair-form { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .repair-input {
+    width: 100%; padding: 10px 12px; font-size: 14px; font-family: inherit;
+    border: 1px solid var(--line); border-radius: 8px; margin-bottom: 12px;
+  }
+  .repair-form-row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .repair-form-row > span { flex: 1 1 180px; }
+  .repair-form-actions { display: flex; gap: 10px; align-items: center; margin-top: 14px; }
+
   /* ==================================================================
      Small screens, and things that should always have been true.
      Everything below is ADDITIVE — the desktop layout above is
@@ -718,7 +744,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 29 Aug 2026, 12:22 pm';
+  window.KuBi.BUILD_STAMP = 'Build: 31 Aug 2026, 10:37 am';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -34253,6 +34279,70 @@ window.KuBi.STRINGS = {
     en: 'Housekeeping',
     hi: 'हाउसकीपिंग'
   },
+  'repair.title': {
+    en: 'Repairs',
+    hi: 'मरम्मत'
+  },
+  'repair.subtitle': {
+    en: 'Faults reported, until they are fixed.',
+    hi: 'बताई गई खराबी, जब तक ठीक न हो जाए।'
+  },
+  'repair.none': {
+    en: 'Nothing is waiting to be repaired.',
+    hi: 'मरम्मत के लिए कुछ बाकी नहीं है।'
+  },
+  'repair.report': {
+    en: 'Report a fault',
+    hi: 'खराबी बताएं'
+  },
+  'repair.what': {
+    en: 'What is wrong?',
+    hi: 'क्या खराबी है?'
+  },
+  'repair.where': {
+    en: 'Where',
+    hi: 'कहां'
+  },
+  'repair.kind': {
+    en: 'Kind',
+    hi: 'किस तरह की'
+  },
+  'repair.save': {
+    en: 'Report it',
+    hi: 'दर्ज करें'
+  },
+  'repair.cancel': {
+    en: 'Cancel',
+    hi: 'रहने दें'
+  },
+  'repair.markDone': {
+    en: 'Mark fixed',
+    hi: 'ठीक हो गया'
+  },
+  'repair.openFor': {
+    en: 'Open',
+    hi: 'बाकी'
+  },
+  'repair.days': {
+    en: 'days',
+    hi: 'दिन'
+  },
+  'repair.today': {
+    en: 'Reported today',
+    hi: 'आज बताई गई'
+  },
+  'repair.fixed': {
+    en: 'Fixed',
+    hi: 'ठीक हो गई'
+  },
+  'repair.openCount': {
+    en: 'open',
+    hi: 'बाकी'
+  },
+  'attention.repairOpen': {
+    en: 'still not repaired',
+    hi: 'अभी तक ठीक नहीं हुई'
+  },
   'clinic.tab.closing': {
     en: 'Closing',
     hi: 'बंद करना'
@@ -36616,7 +36706,7 @@ window.KuBi.closureGate = function (procedureType, checkedMap) {
 // enough context (apptId, subtab, room) to jump directly to the problem.
 
 window.KuBi = window.KuBi || {};
-window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfter, readinessChecked, clinicStatus, procedureState, closedCases, treatmentChecked) {
+window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfter, readinessChecked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs) {
   const items = [];
   const now = Date.now();
   const afterChecked = treatmentCheckedAfter || {};
@@ -36633,7 +36723,8 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
     waitingTooLong: 'front_desk_receptionist',
     noShow: 'front_desk_receptionist',
     treatmentNotReady: 'lead_dental_assistant',
-    caseNotClosed: 'lead_dentist'
+    caseNotClosed: 'lead_dentist',
+    repairOpen: 'clinic_manager'
   };
 
   // ---- CLINIC: rooms not ready ----------------------------------------
@@ -36727,6 +36818,23 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
       }
     }
   });
+
+  // ---- BUILDING: a fault nobody has fixed -----------------------------
+  // Only once it is overdue. A tap reported an hour ago is being dealt
+  // with; one still dripping two days later is not.
+  window.KuBi.repairsByAge(repairs || []).forEach(function (r) {
+    if (!window.KuBi.repairIsOverdue(r)) return;
+    items.push({
+      id: 'repair-' + r.id,
+      area: 'clinic',
+      subtab: 'housekeeping',
+      kind: 'repairOpen',
+      what: r.what,
+      place: r.place,
+      days: window.KuBi.repairAgeDays(r),
+      owner: OWNER.repairOpen
+    });
+  });
   return items;
 };
 
@@ -36790,6 +36898,125 @@ window.KuBi.EQUIPMENT_STATUS_SEED = {
     at: new Date(),
     by: 'Priya Sharma'
   }
+};
+
+// ---- src/repairs.js ----
+// repairs.js — plumbing, electrical and fitting faults, tracked from the
+// moment somebody notices one until it is actually fixed.
+//
+// The daily checklist can only record that a fault was REPORTED. A leaking
+// tap ticked off in the morning is still leaking in the evening, and the
+// tick says nothing about that. A repair therefore has a life of its own:
+// it stays open, it ages, and it is visible until closed.
+//
+// Deliberately small: what it is, where it is, who raised it, and whether
+// it is done. No cost, no vendor, no invoice — none of that helps the
+// person standing in front of a broken tap.
+
+window.KuBi = window.KuBi || {};
+function s(en, hi) {
+  return {
+    en: en,
+    hi: hi
+  };
+}
+
+// Where a fault can be. Rooms come from CLINIC_ROOMS so the two never
+// drift apart; the rest are the shared parts of the clinic.
+window.KuBi.REPAIR_PLACES = function () {
+  const rooms = (window.KuBi.CLINIC_ROOMS || []).map(function (r) {
+    return {
+      id: 'room_' + r,
+      room: r,
+      name: null
+    };
+  });
+  return rooms.concat([{
+    id: 'reception',
+    name: s('Reception', 'रिसेप्शन')
+  }, {
+    id: 'waiting',
+    name: s('Waiting area', 'वेटिंग एरिया')
+  }, {
+    id: 'washroom',
+    name: s('Washroom', 'वॉशरूम')
+  }, {
+    id: 'pantry',
+    name: s('Pantry', 'पैंट्री')
+  }, {
+    id: 'sterilization',
+    name: s('Sterilization room', 'स्टरलाइज़ेशन रूम')
+  }, {
+    id: 'common',
+    name: s('Common area', 'कॉमन एरिया')
+  }]);
+};
+window.KuBi.REPAIR_KINDS = [{
+  id: 'plumbing',
+  name: s('Plumbing', 'प्लंबिंग')
+}, {
+  id: 'electrical',
+  name: s('Electrical', 'बिजली')
+}, {
+  id: 'furniture',
+  name: s('Furniture / fitting', 'फर्नीचर / फिटिंग')
+}, {
+  id: 'other',
+  name: s('Something else', 'कुछ और')
+}];
+window.KuBi.repairPlaceLabel = function (placeId, lang, t) {
+  const place = window.KuBi.REPAIR_PLACES().find(function (p) {
+    return p.id === placeId;
+  });
+  if (!place) return '';
+  if (place.room) return t('clinic.room', lang) + ' ' + place.room;
+  return place.name[lang] || place.name.en;
+};
+window.KuBi.repairKindLabel = function (kindId, lang) {
+  const k = window.KuBi.REPAIR_KINDS.find(function (x) {
+    return x.id === kindId;
+  });
+  return k ? k.name[lang] || k.name.en : '';
+};
+
+// Seeded with one open fault so the screen is never empty on first open,
+// the same reason equipment carries one.
+window.KuBi.REPAIRS_SEED = [{
+  id: 'R1',
+  kind: 'plumbing',
+  place: 'washroom',
+  what: 'Tap dripping constantly',
+  by: 'Priya Sharma',
+  at: new Date(Date.now() - 2 * 86400000),
+  done: false,
+  doneAt: null
+}];
+
+// How old, in whole days. Used to say "open 2 days", never stored.
+window.KuBi.repairAgeDays = function (repair, now) {
+  const from = new Date(repair.at).getTime();
+  const to = (now || new Date()).getTime();
+  return Math.max(0, Math.floor((to - from) / 86400000));
+};
+
+// A fault nobody has fixed after this long is stated as overdue. Two days
+// is the clinic's own "report it immediately" turned into something the
+// screen can check.
+window.KuBi.REPAIR_OVERDUE_DAYS = 2;
+window.KuBi.repairIsOverdue = function (repair, now) {
+  return !repair.done && window.KuBi.repairAgeDays(repair, now) >= window.KuBi.REPAIR_OVERDUE_DAYS;
+};
+window.KuBi.openRepairs = function (repairs) {
+  return (repairs || []).filter(function (r) {
+    return !r.done;
+  });
+};
+
+// Oldest first: the one that has been waiting longest is the one to chase.
+window.KuBi.repairsByAge = function (repairs) {
+  return (repairs || []).slice().sort(function (a, b) {
+    return new Date(a.at).getTime() - new Date(b.at).getTime();
+  });
 };
 
 // ---- src/sterilization.js ----
@@ -37812,7 +38039,7 @@ window.KuBi.buildSnapshot = function (ctx, closedProperly) {
   const d = window.KuBi.misToday(ctx);
   const readiness = window.KuBi.readinessStats(ctx.readinessChecked || {});
   const counts = window.KuBi.attendanceCounts();
-  const attention = window.KuBi.computeAttentionItems(ctx.appointments, ctx.treatmentCheckedAfter, ctx.readinessChecked, ctx.clinicStatus, ctx.procedureState, ctx.closedCases, ctx.treatmentChecked);
+  const attention = window.KuBi.computeAttentionItems(ctx.appointments, ctx.treatmentCheckedAfter, ctx.readinessChecked, ctx.clinicStatus, ctx.procedureState, ctx.closedCases, ctx.treatmentChecked, ctx.repairs);
   return {
     date: window.KuBi.operatingDate(),
     closedProperly: !!closedProperly,
@@ -38108,12 +38335,13 @@ window.KuBi.Today = function Today({
   closingChecked,
   equipmentStatus,
   sterPacks,
+  repairs,
   goTo
 }) {
   const t = window.KuBi.t;
   const [attentionOpen, setAttentionOpen] = React.useState(false);
   const readiness = window.KuBi.readinessStats(checked);
-  const attentionItems = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked);
+  const attentionItems = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs);
   // Five, and never a sixth. Past that it stops being "what needs
   // attention" and becomes a to-do list, which staff stop reading. The
   // count above still reports the true total.
@@ -38129,6 +38357,7 @@ window.KuBi.Today = function Today({
     if (item.kind === 'roomNotReady') return t('clinic.room', lang) + ' ' + item.room_no + ' ' + t('attention.roomNotReady', lang) + ' (' + item.done + '/' + item.total + ')';
     if (item.kind === 'treatmentNotReady') return item.patient + ' — ' + t('attention.treatmentNotReady', lang) + (item.missing && item.missing.length ? ': ' + item.missing[0] : '');
     if (item.kind === 'caseNotClosed') return item.patient + ' — ' + t('attention.caseNotClosed', lang);
+    if (item.kind === 'repairOpen') return item.what + ' — ' + t('attention.repairOpen', lang) + ' (' + item.days + ' ' + t('repair.days', lang) + ')';
     return '';
   }
   function areaLabel(area) {
@@ -38462,6 +38691,9 @@ window.KuBi.Clinic = function Clinic({
   onSetEquipment,
   sterPacks,
   onAdvancePack,
+  repairs,
+  onReportRepair,
+  onRepairFixed,
   appointments
 }) {
   const t = window.KuBi.t;
@@ -38481,6 +38713,8 @@ window.KuBi.Clinic = function Clinic({
   const [view, setView] = React.useState(ownsAnySection ? 'mine' : 'all'); // 'mine' | 'all'
   const [activeRoom, setActiveRoom] = React.useState(initialRoom || window.KuBi.CLINIC_ROOMS[0]);
   const [expandedEquip, setExpandedEquip] = React.useState(null);
+  const [repairForm, setRepairForm] = React.useState(null); // null = form closed
+
   React.useEffect(function () {
     if (initialRoom) setActiveRoom(initialRoom);
   }, [initialRoom]);
@@ -38916,7 +39150,111 @@ window.KuBi.Clinic = function Clinic({
     onClick: function () {
       setView('all');
     }
-  }, t('readiness.fullProcedure', lang))), visibleSections.length === 0 ? /*#__PURE__*/React.createElement("div", {
+  }, t('readiness.fullProcedure', lang))), subtab === 'housekeeping' ? function () {
+    const all = window.KuBi.repairsByAge(repairs || []);
+    const open = window.KuBi.openRepairs(all);
+    return /*#__PURE__*/React.createElement("div", {
+      className: "card repair-card"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "card-title"
+    }, t('repair.title', lang), open.length ? /*#__PURE__*/React.createElement("span", {
+      className: "repair-count"
+    }, open.length, " ", t('repair.openCount', lang)) : null), /*#__PURE__*/React.createElement("p", {
+      className: "module-sub"
+    }, t('repair.subtitle', lang)), open.length === 0 ? /*#__PURE__*/React.createElement("p", {
+      className: "module-sub"
+    }, t('repair.none', lang)) : /*#__PURE__*/React.createElement("ul", {
+      className: "repair-list"
+    }, open.map(function (r) {
+      const days = window.KuBi.repairAgeDays(r);
+      const late = window.KuBi.repairIsOverdue(r);
+      return /*#__PURE__*/React.createElement("li", {
+        key: r.id,
+        className: 'repair-row' + (late ? ' repair-row-late' : '')
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "repair-dot"
+      }, late ? '🔴' : '🟡'), /*#__PURE__*/React.createElement("span", {
+        className: "repair-body"
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "repair-what"
+      }, r.what), /*#__PURE__*/React.createElement("span", {
+        className: "repair-meta"
+      }, window.KuBi.repairPlaceLabel(r.place, lang, t), " \xB7 ", window.KuBi.repairKindLabel(r.kind, lang), " \xB7 ", r.by, ' · ', days === 0 ? t('repair.today', lang) : t('repair.openFor', lang) + ' ' + days + ' ' + t('repair.days', lang))), /*#__PURE__*/React.createElement("button", {
+        className: "rowbtn",
+        onClick: function () {
+          onRepairFixed(r.id);
+        }
+      }, t('repair.markDone', lang)));
+    })), repairForm ? /*#__PURE__*/React.createElement("div", {
+      className: "repair-form"
+    }, /*#__PURE__*/React.createElement("label", {
+      className: "prep-row-label"
+    }, t('repair.what', lang)), /*#__PURE__*/React.createElement("input", {
+      className: "repair-input",
+      type: "text",
+      value: repairForm.what,
+      onChange: function (e) {
+        setRepairForm(Object.assign({}, repairForm, {
+          what: e.target.value
+        }));
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      className: "repair-form-row"
+    }, /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("label", {
+      className: "prep-row-label"
+    }, t('repair.where', lang)), /*#__PURE__*/React.createElement("select", {
+      className: "proc-select",
+      value: repairForm.place,
+      onChange: function (e) {
+        setRepairForm(Object.assign({}, repairForm, {
+          place: e.target.value
+        }));
+      }
+    }, window.KuBi.REPAIR_PLACES().map(function (pl) {
+      return /*#__PURE__*/React.createElement("option", {
+        key: pl.id,
+        value: pl.id
+      }, window.KuBi.repairPlaceLabel(pl.id, lang, t));
+    }))), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("label", {
+      className: "prep-row-label"
+    }, t('repair.kind', lang)), /*#__PURE__*/React.createElement("select", {
+      className: "proc-select",
+      value: repairForm.kind,
+      onChange: function (e) {
+        setRepairForm(Object.assign({}, repairForm, {
+          kind: e.target.value
+        }));
+      }
+    }, window.KuBi.REPAIR_KINDS.map(function (k) {
+      return /*#__PURE__*/React.createElement("option", {
+        key: k.id,
+        value: k.id
+      }, window.KuBi.repairKindLabel(k.id, lang));
+    })))), /*#__PURE__*/React.createElement("div", {
+      className: "repair-form-actions"
+    }, /*#__PURE__*/React.createElement("button", {
+      className: 'btn-primary today-btn' + (repairForm.what.trim() ? '' : ' btn-disabled'),
+      disabled: !repairForm.what.trim(),
+      onClick: function () {
+        onReportRepair(repairForm.kind, repairForm.place, repairForm.what.trim());
+        setRepairForm(null);
+      }
+    }, t('repair.save', lang)), /*#__PURE__*/React.createElement("button", {
+      className: "rowbtn",
+      onClick: function () {
+        setRepairForm(null);
+      }
+    }, t('repair.cancel', lang)))) : /*#__PURE__*/React.createElement("button", {
+      className: "btn-primary today-btn repair-open-btn",
+      onClick: function () {
+        setRepairForm({
+          what: '',
+          place: window.KuBi.REPAIR_PLACES()[0].id,
+          kind: 'plumbing'
+        });
+      }
+    }, t('repair.report', lang)));
+  }() : null, visibleSections.length === 0 ? /*#__PURE__*/React.createElement("div", {
     className: "card empty-tab-notice"
   }, /*#__PURE__*/React.createElement("p", {
     className: "module-sub"
@@ -39962,6 +40300,7 @@ window.KuBi.Management = function Management({
   sterPacks,
   closingChecked,
   initialSubtab,
+  repairs,
   goTo
 }) {
   const t = window.KuBi.t;
@@ -39973,7 +40312,7 @@ window.KuBi.Management = function Management({
 
   // ---- derived counts --------------------------------------------------
   const readiness = window.KuBi.readinessStats(checked);
-  const attention = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked);
+  const attention = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs);
   const scheduled = appointments.filter(function (a) {
     return a.status !== 'no_show';
   }).length;
@@ -40015,6 +40354,7 @@ window.KuBi.Management = function Management({
     if (item.kind === 'roomNotReady') return t('clinic.room', lang) + ' ' + item.room_no + ' — ' + t('attention.roomNotReady', lang);
     if (item.kind === 'treatmentNotReady') return item.patient + ' — ' + t('attention.treatmentNotReady', lang);
     if (item.kind === 'caseNotClosed') return item.patient + ' — ' + t('attention.caseNotClosed', lang);
+    if (item.kind === 'repairOpen') return item.what + ' — ' + t('attention.repairOpen', lang) + ' (' + item.days + ' ' + t('repair.days', lang) + ')';
     return '';
   }
   function Metric({
@@ -40310,6 +40650,7 @@ function Shell({
   // Equipment status: id -> { ok, note, at, by }. Manual, per the clinic's
   // preference — derived status would hide real faults behind checkboxes.
   const [equipmentStatus, setEquipmentStatus] = React.useState(window.KuBi.EQUIPMENT_STATUS_SEED || {});
+  const [repairs, setRepairs] = React.useState(window.KuBi.REPAIRS_SEED || []);
   const [sterPacks, setSterPacks] = React.useState(window.KuBi.STER_PACKS || []);
   const ActiveComponent = activeArea ? AREAS[activeArea].component() : null;
 
@@ -40326,9 +40667,10 @@ function Shell({
       equipmentStatus: equipmentStatus,
       sterPacks: sterPacks,
       clinicStatus: clinicStatus,
-      closingChecked: closingChecked
+      closingChecked: closingChecked,
+      repairs: repairs
     });
-  }, [appointments, procedureState, closedCases, treatmentChecked, treatmentCheckedAfter, readinessChecked, equipmentStatus, sterPacks, clinicStatus, closingChecked]);
+  }, [appointments, procedureState, closedCases, treatmentChecked, treatmentCheckedAfter, readinessChecked, equipmentStatus, sterPacks, clinicStatus, closingChecked, repairs]);
   function goTo(area, subtab, apptId, room) {
     setActiveArea(area);
     setNavTarget({
@@ -40356,7 +40698,8 @@ function Shell({
       equipmentStatus: equipmentStatus,
       sterPacks: sterPacks,
       clinicStatus: clinicStatus,
-      closingChecked: closingChecked
+      closingChecked: closingChecked,
+      repairs: repairs
     }, true);
     setClinicStatus({
       open: false,
@@ -40431,6 +40774,33 @@ function Shell({
       });
     });
   }
+
+  // Repairs live until somebody fixes them, so raising one appends and
+  // fixing one stamps it — neither ever removes the record.
+  function reportRepair(kind, place, what) {
+    setRepairs(function (prev) {
+      return prev.concat([{
+        id: 'R' + (prev.length + 1) + '-' + prev.length,
+        kind: kind,
+        place: place,
+        what: what,
+        by: user.name,
+        at: new Date(),
+        done: false,
+        doneAt: null
+      }]);
+    });
+  }
+  function markRepairFixed(id) {
+    setRepairs(function (prev) {
+      return prev.map(function (r) {
+        return r.id === id ? Object.assign({}, r, {
+          done: true,
+          doneAt: new Date()
+        }) : r;
+      });
+    });
+  }
   function setEquipment(id, ok, note) {
     setEquipmentStatus(function (prev) {
       const next = Object.assign({}, prev);
@@ -40489,6 +40859,7 @@ function Shell({
         closingChecked: closingChecked,
         equipmentStatus: equipmentStatus,
         sterPacks: sterPacks,
+        repairs: repairs,
         goTo: goTo
       });
     }
@@ -40509,6 +40880,9 @@ function Shell({
         onSetEquipment: setEquipment,
         sterPacks: sterPacks,
         onAdvancePack: advancePack,
+        repairs: repairs,
+        onReportRepair: reportRepair,
+        onRepairFixed: markRepairFixed,
         appointments: appointments
       });
     }
@@ -40553,6 +40927,7 @@ function Shell({
         equipmentStatus: equipmentStatus,
         sterPacks: sterPacks,
         closingChecked: closingChecked,
+        repairs: repairs,
         initialSubtab: navTarget.subtab,
         goTo: goTo
       });

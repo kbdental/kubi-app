@@ -8,7 +8,7 @@
 
 window.KuBi = window.KuBi || {};
 
-window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfter, readinessChecked, clinicStatus, procedureState, closedCases, treatmentChecked) {
+window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfter, readinessChecked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs) {
   const items = [];
   const now = Date.now();
   const afterChecked = treatmentCheckedAfter || {};
@@ -26,6 +26,7 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
     noShow: 'front_desk_receptionist',
     treatmentNotReady: 'lead_dental_assistant',
     caseNotClosed: 'lead_dentist',
+    repairOpen: 'clinic_manager',
   };
 
   // ---- CLINIC: rooms not ready ----------------------------------------
@@ -79,6 +80,19 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
         items.push({ id: 'postop-' + a.id, area: 'treatment', apptId: a.id, subtab: 'after', kind: 'caseNotClosed', patient: a.patient, procedure: a.procedureType, owner: OWNER.caseNotClosed });
       }
     }
+  });
+
+  // ---- BUILDING: a fault nobody has fixed -----------------------------
+  // Only once it is overdue. A tap reported an hour ago is being dealt
+  // with; one still dripping two days later is not.
+  window.KuBi.repairsByAge(repairs || []).forEach(function (r) {
+    if (!window.KuBi.repairIsOverdue(r)) return;
+    items.push({
+      id: 'repair-' + r.id, area: 'clinic', subtab: 'housekeeping',
+      kind: 'repairOpen', what: r.what, place: r.place,
+      days: window.KuBi.repairAgeDays(r),
+      owner: OWNER.repairOpen,
+    });
   });
 
   return items;

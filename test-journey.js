@@ -115,6 +115,25 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   check('Water pump is on the checklist', /water pump/i.test(text()));
   check('Fixtures & repairs under Housekeeping', /Fixtures & Repairs/i.test(text()));
 
+  // 10b. REPAIRS — a fault stays visible until somebody fixes it.
+  check('Repairs card under Housekeeping', /Repairs/i.test(text()));
+  check('Seeded fault is listed', /Tap dripping/i.test(text()));
+  const openRepairRows = () => doc().querySelectorAll('.repair-row').length;
+  const before = openRepairRows();
+  await step(() => click(btnByText(/^Report a fault/)));
+  check('Report form opens', !!doc().querySelector('.repair-input'));
+  await step(() => {
+    const inp = doc().querySelector('.repair-input');
+    w.Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype, 'value').set.call(inp, 'Switch board loose in Clinic 2');
+    inp.dispatchEvent(new w.Event('input', { bubbles: true }));
+  });
+  await step(() => click(btnByText(/^Report it$/)));
+  check('Reported fault is listed', openRepairRows() === before + 1 && /Switch board loose/.test(text()),
+        openRepairRows() + ' open');
+  await step(() => click(Array.from(doc().querySelectorAll('.repair-row')).find(r => /Switch board loose/.test(r.textContent)).querySelector('button')));
+  check('Fixed fault leaves the list', !/Switch board loose/.test(text()) && openRepairRows() === before,
+        openRepairRows() + ' open');
+
   // 10. CLOSING — fumigation lives here
   await step(() => click(Array.from(doc().querySelectorAll('.toggle-btn')).find(b => /Closing/.test(b.textContent))));
   check('Closing gate present', /Clinic Cannot Close|Clinic May Close/i.test(text()));
@@ -350,6 +369,17 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   }
   const manyItems = K.computeAttentionItems(manyAppts, {}, {}, openClinic, {}, {}, {});
   check('Attention list is not capped at source', manyItems.length > 5, manyItems.length + ' items');
+
+  // 25. REPAIRS — a fresh fault is being dealt with; an old one is not.
+  const freshFault = [{ id: 'RF', kind: 'plumbing', place: 'washroom', what: 'Tap', by: 'X', at: new Date(), done: false }];
+  const oldFault = [{ id: 'RO', kind: 'plumbing', place: 'washroom', what: 'Tap', by: 'X', at: new Date(Date.now() - 3 * 86400000), done: false }];
+  const fixedFault = [{ id: 'RD', kind: 'plumbing', place: 'washroom', what: 'Tap', by: 'X', at: new Date(Date.now() - 9 * 86400000), done: true }];
+  const attnFor = reps => K.computeAttentionItems([], {}, {}, openClinic, {}, {}, {}, reps)
+                            .filter(i => i.kind === 'repairOpen');
+  check('A fault reported today is not chased yet', attnFor(freshFault).length === 0);
+  check('A fault open for days needs attention', attnFor(oldFault).length === 1);
+  check('A fixed fault is never chased', attnFor(fixedFault).length === 0);
+  check('Repair attention names an owner', (attnFor(oldFault)[0] || {}).owner === 'clinic_manager');
 
   // SUMMARY
   await step(() => {}, 150);

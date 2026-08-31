@@ -100,6 +100,7 @@ function Shell({ user, onLogout, lang, setLang }) {
   // Equipment status: id -> { ok, note, at, by }. Manual, per the clinic's
   // preference — derived status would hide real faults behind checkboxes.
   const [equipmentStatus, setEquipmentStatus] = React.useState(window.KuBi.EQUIPMENT_STATUS_SEED || {});
+  const [repairs, setRepairs] = React.useState(window.KuBi.REPAIRS_SEED || []);
   const [sterPacks, setSterPacks] = React.useState(window.KuBi.STER_PACKS || []);
 
   const ActiveComponent = activeArea ? AREAS[activeArea].component() : null;
@@ -118,8 +119,9 @@ function Shell({ user, onLogout, lang, setLang }) {
       sterPacks: sterPacks,
       clinicStatus: clinicStatus,
       closingChecked: closingChecked,
+      repairs: repairs,
     });
-  }, [appointments, procedureState, closedCases, treatmentChecked, treatmentCheckedAfter, readinessChecked, equipmentStatus, sterPacks, clinicStatus, closingChecked]);
+  }, [appointments, procedureState, closedCases, treatmentChecked, treatmentCheckedAfter, readinessChecked, equipmentStatus, sterPacks, clinicStatus, closingChecked, repairs]);
 
   function goTo(area, subtab, apptId, room) {
     setActiveArea(area);
@@ -140,6 +142,7 @@ function Shell({ user, onLogout, lang, setLang }) {
       sterPacks: sterPacks,
       clinicStatus: clinicStatus,
       closingChecked: closingChecked,
+      repairs: repairs,
     }, true);
     setClinicStatus({ open: false, by: user.name, at: new Date() });
     setClosingChecked({});
@@ -196,6 +199,25 @@ function Shell({ user, onLogout, lang, setLang }) {
     });
   }
 
+  // Repairs live until somebody fixes them, so raising one appends and
+  // fixing one stamps it — neither ever removes the record.
+  function reportRepair(kind, place, what) {
+    setRepairs(function (prev) {
+      return prev.concat([{
+        id: 'R' + (prev.length + 1) + '-' + prev.length,
+        kind: kind, place: place, what: what,
+        by: user.name, at: new Date(), done: false, doneAt: null,
+      }]);
+    });
+  }
+  function markRepairFixed(id) {
+    setRepairs(function (prev) {
+      return prev.map(function (r) {
+        return r.id === id ? Object.assign({}, r, { done: true, doneAt: new Date() }) : r;
+      });
+    });
+  }
+
   function setEquipment(id, ok, note) {
     setEquipmentStatus(function (prev) {
       const next = Object.assign({}, prev);
@@ -248,6 +270,7 @@ function Shell({ user, onLogout, lang, setLang }) {
           closingChecked={closingChecked}
           equipmentStatus={equipmentStatus}
           sterPacks={sterPacks}
+          repairs={repairs}
           goTo={goTo}
         />
       );
@@ -270,6 +293,9 @@ function Shell({ user, onLogout, lang, setLang }) {
           onSetEquipment={setEquipment}
           sterPacks={sterPacks}
           onAdvancePack={advancePack}
+          repairs={repairs}
+          onReportRepair={reportRepair}
+          onRepairFixed={markRepairFixed}
           appointments={appointments}
         />
       );
@@ -320,6 +346,7 @@ function Shell({ user, onLogout, lang, setLang }) {
           equipmentStatus={equipmentStatus}
           sterPacks={sterPacks}
           closingChecked={closingChecked}
+          repairs={repairs}
           initialSubtab={navTarget.subtab}
           goTo={goTo}
         />

@@ -11,12 +11,12 @@ function timeStr(d) {
   return d ? new Date(d).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
 }
 
-window.KuBi.Today = function Today({ lang, clinicStatus, appointments, checked, treatmentChecked, treatmentCheckedAfter, procedureState, closedCases, closingChecked, equipmentStatus, sterPacks, goTo }) {
+window.KuBi.Today = function Today({ lang, clinicStatus, appointments, checked, treatmentChecked, treatmentCheckedAfter, procedureState, closedCases, closingChecked, equipmentStatus, sterPacks, repairs, goTo }) {
   const t = window.KuBi.t;
   const [attentionOpen, setAttentionOpen] = React.useState(false);
 
   const readiness = window.KuBi.readinessStats(checked);
-  const attentionItems = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked);
+  const attentionItems = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs);
   // Five, and never a sixth. Past that it stops being "what needs
   // attention" and becomes a to-do list, which staff stop reading. The
   // count above still reports the true total.
@@ -31,6 +31,7 @@ window.KuBi.Today = function Today({ lang, clinicStatus, appointments, checked, 
     if (item.kind === 'roomNotReady') return t('clinic.room', lang) + ' ' + item.room_no + ' ' + t('attention.roomNotReady', lang) + ' (' + item.done + '/' + item.total + ')';
     if (item.kind === 'treatmentNotReady') return item.patient + ' — ' + t('attention.treatmentNotReady', lang) + (item.missing && item.missing.length ? ': ' + item.missing[0] : '');
     if (item.kind === 'caseNotClosed') return item.patient + ' — ' + t('attention.caseNotClosed', lang);
+    if (item.kind === 'repairOpen') return item.what + ' — ' + t('attention.repairOpen', lang) + ' (' + item.days + ' ' + t('repair.days', lang) + ')';
     return '';
   }
 

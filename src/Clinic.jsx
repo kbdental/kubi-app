@@ -11,7 +11,7 @@ function pick(field, lang) {
   return field[lang] || field.en;
 }
 
-window.KuBi.Clinic = function Clinic({ currentUser, lang, checked, onToggle, clinicStatus, onOpen, onClose, initialSubtab, initialRoom, closingChecked, onToggleClosing, equipmentStatus, onSetEquipment, sterPacks, onAdvancePack, appointments }) {
+window.KuBi.Clinic = function Clinic({ currentUser, lang, checked, onToggle, clinicStatus, onOpen, onClose, initialSubtab, initialRoom, closingChecked, onToggleClosing, equipmentStatus, onSetEquipment, sterPacks, onAdvancePack, repairs, onReportRepair, onRepairFixed, appointments }) {
   const t = window.KuBi.t;
   const RoleBadge = window.KuBi.RoleBadge;
   const SECTIONS = window.KuBi.CLINIC_READINESS;
@@ -29,6 +29,7 @@ window.KuBi.Clinic = function Clinic({ currentUser, lang, checked, onToggle, cli
   const [view, setView] = React.useState(ownsAnySection ? 'mine' : 'all'); // 'mine' | 'all'
   const [activeRoom, setActiveRoom] = React.useState(initialRoom || window.KuBi.CLINIC_ROOMS[0]);
   const [expandedEquip, setExpandedEquip] = React.useState(null);
+  const [repairForm, setRepairForm] = React.useState(null); // null = form closed
 
   React.useEffect(function () {
     if (initialRoom) setActiveRoom(initialRoom);
@@ -449,6 +450,98 @@ window.KuBi.Clinic = function Clinic({ currentUser, lang, checked, onToggle, cli
             <button className={'toggle-btn' + (view === 'mine' ? ' toggle-btn-active' : '')} onClick={function () { setView('mine'); }}>{t('readiness.myChecklist', lang)}</button>
             <button className={'toggle-btn' + (view === 'all' ? ' toggle-btn-active' : '')} onClick={function () { setView('all'); }}>{t('readiness.fullProcedure', lang)}</button>
           </div>
+
+          {/* Repairs sit above the housekeeping checklist: the checklist
+              can only record that a fault was noticed, this is what keeps
+              it visible until somebody fixes it. */}
+          {subtab === 'housekeeping' ? (function () {
+            const all = window.KuBi.repairsByAge(repairs || []);
+            const open = window.KuBi.openRepairs(all);
+            return (
+              <div className="card repair-card">
+                <div className="card-title">
+                  {t('repair.title', lang)}
+                  {open.length ? <span className="repair-count">{open.length} {t('repair.openCount', lang)}</span> : null}
+                </div>
+                <p className="module-sub">{t('repair.subtitle', lang)}</p>
+
+                {open.length === 0 ? (
+                  <p className="module-sub">{t('repair.none', lang)}</p>
+                ) : (
+                  <ul className="repair-list">
+                    {open.map(function (r) {
+                      const days = window.KuBi.repairAgeDays(r);
+                      const late = window.KuBi.repairIsOverdue(r);
+                      return (
+                        <li key={r.id} className={'repair-row' + (late ? ' repair-row-late' : '')}>
+                          <span className="repair-dot">{late ? '🔴' : '🟡'}</span>
+                          <span className="repair-body">
+                            <span className="repair-what">{r.what}</span>
+                            <span className="repair-meta">
+                              {window.KuBi.repairPlaceLabel(r.place, lang, t)} · {window.KuBi.repairKindLabel(r.kind, lang)} · {r.by}
+                              {' · '}
+                              {days === 0 ? t('repair.today', lang) : t('repair.openFor', lang) + ' ' + days + ' ' + t('repair.days', lang)}
+                            </span>
+                          </span>
+                          <button className="rowbtn" onClick={function () { onRepairFixed(r.id); }}>{t('repair.markDone', lang)}</button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+
+                {repairForm ? (
+                  <div className="repair-form">
+                    <label className="prep-row-label">{t('repair.what', lang)}</label>
+                    <input
+                      className="repair-input" type="text" value={repairForm.what}
+                      onChange={function (e) { setRepairForm(Object.assign({}, repairForm, { what: e.target.value })); }}
+                    />
+                    <div className="repair-form-row">
+                      <span>
+                        <label className="prep-row-label">{t('repair.where', lang)}</label>
+                        <select
+                          className="proc-select" value={repairForm.place}
+                          onChange={function (e) { setRepairForm(Object.assign({}, repairForm, { place: e.target.value })); }}
+                        >
+                          {window.KuBi.REPAIR_PLACES().map(function (pl) {
+                            return <option key={pl.id} value={pl.id}>{window.KuBi.repairPlaceLabel(pl.id, lang, t)}</option>;
+                          })}
+                        </select>
+                      </span>
+                      <span>
+                        <label className="prep-row-label">{t('repair.kind', lang)}</label>
+                        <select
+                          className="proc-select" value={repairForm.kind}
+                          onChange={function (e) { setRepairForm(Object.assign({}, repairForm, { kind: e.target.value })); }}
+                        >
+                          {window.KuBi.REPAIR_KINDS.map(function (k) {
+                            return <option key={k.id} value={k.id}>{window.KuBi.repairKindLabel(k.id, lang)}</option>;
+                          })}
+                        </select>
+                      </span>
+                    </div>
+                    <div className="repair-form-actions">
+                      <button
+                        className={'btn-primary today-btn' + (repairForm.what.trim() ? '' : ' btn-disabled')}
+                        disabled={!repairForm.what.trim()}
+                        onClick={function () {
+                          onReportRepair(repairForm.kind, repairForm.place, repairForm.what.trim());
+                          setRepairForm(null);
+                        }}
+                      >{t('repair.save', lang)}</button>
+                      <button className="rowbtn" onClick={function () { setRepairForm(null); }}>{t('repair.cancel', lang)}</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    className="btn-primary today-btn repair-open-btn"
+                    onClick={function () { setRepairForm({ what: '', place: window.KuBi.REPAIR_PLACES()[0].id, kind: 'plumbing' }); }}
+                  >{t('repair.report', lang)}</button>
+                )}
+              </div>
+            );
+          })() : null}
 
           {visibleSections.length === 0 ? (
             <div className="card empty-tab-notice">

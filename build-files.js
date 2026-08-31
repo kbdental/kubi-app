@@ -10,6 +10,7 @@ module.exports = [
   'src/treatmentChecklists.js',
   'src/attention.js',
   'src/equipment.js',
+  'src/repairs.js',
   'src/sterilization.js',
   'src/inventory.js',
   'src/nextAction.js',

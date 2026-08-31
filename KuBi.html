@@ -617,6 +617,9 @@
   .lapsed-kind { display: block; font-size: 11.5px; font-weight: 700; color: var(--ink-soft); }
   .lapsed-plan { display: block; font-size: 12.5px; }
 
+  .today-greeting { color: var(--ink-soft); font-size: 14px; margin: 2px 0 0; }
+  .now-next-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; opacity: 0.75; }
+
   /* ---------- Repairs ---------- */
   .repair-card { margin-bottom: 16px; }
   .repair-count {
@@ -747,7 +750,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 31 Aug 2026, 10:43 am';
+  window.KuBi.BUILD_STAMP = 'Build: 31 Aug 2026, 04:28 pm';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -34294,6 +34297,22 @@ window.KuBi.STRINGS = {
     en: 'NOW',
     hi: 'अभी'
   },
+  'now.next': {
+    en: 'NEXT',
+    hi: 'आगे'
+  },
+  'today.goodMorning': {
+    en: 'Good morning',
+    hi: 'सुप्रभात'
+  },
+  'today.goodAfternoon': {
+    en: 'Good afternoon',
+    hi: 'नमस्कार'
+  },
+  'today.goodEvening': {
+    en: 'Good evening',
+    hi: 'शुभ संध्या'
+  },
   'now.isInChair': {
     en: 'is in Chair',
     hi: 'चेयर पर हैं'
@@ -38560,7 +38579,18 @@ function timeStr(d) {
     minute: '2-digit'
   }) : '';
 }
+
+// Employee names already carry "Dr." where it applies, so greeting by name
+// is right for a dentist and for an assistant alike — no honorific logic,
+// and no chance of calling the receptionist "Doctor".
+function greetingKey(now) {
+  const h = (now || new Date()).getHours();
+  if (h < 12) return 'today.goodMorning';
+  if (h < 17) return 'today.goodAfternoon';
+  return 'today.goodEvening';
+}
 window.KuBi.Today = function Today({
+  currentUser,
   lang,
   clinicStatus,
   appointments,
@@ -38606,7 +38636,9 @@ window.KuBi.Today = function Today({
     className: "module"
   }, /*#__PURE__*/React.createElement("div", {
     className: "module-head"
-  }, /*#__PURE__*/React.createElement("h2", null, t('nav.today', lang))), function () {
+  }, /*#__PURE__*/React.createElement("h2", null, t('nav.today', lang)), /*#__PURE__*/React.createElement("p", {
+    className: "today-greeting"
+  }, t(greetingKey(), lang), ", ", currentUser.name)), function () {
     const na = window.KuBi.nextAction({
       appointments: appointments,
       procedureState: procedureState,
@@ -38642,7 +38674,10 @@ window.KuBi.Today = function Today({
       tone = 'now-neutral';
       mark = '🔵';
     } else if (na.kind === 'inProgress') {
-      headline = na.appt.patient + ' — ' + na.appt.procedureType + ' ' + t('now.underway', lang);
+      // Who and where on the first line, what on the second. A staff
+      // member should get the situation from the headline alone.
+      headline = na.appt.patient + ' ' + t('now.isInChair', lang) + ' ' + na.appt.chair;
+      detail = na.appt.procedureType + ' — ' + t('now.underway', lang);
       cta = t('proc.completeBtn', lang);
       tone = 'now-live';
       mark = '🔵';
@@ -38653,16 +38688,17 @@ window.KuBi.Today = function Today({
       tone = 'now-alert';
       mark = '🔴';
     } else if (na.kind === 'readyToStart') {
-      headline = na.appt.patient + ' ' + t('now.isInChair', lang) + ' ' + na.appt.chair + ' — ' + na.appt.procedureType + ' ' + t('now.readyToStart', lang);
+      headline = na.appt.patient + ' ' + t('now.isInChair', lang) + ' ' + na.appt.chair;
+      detail = na.appt.procedureType + ' — ' + t('now.readyToStart', lang);
       cta = t('proc.startBtn', lang);
       tone = 'now-good';
       mark = '🔵';
     } else if (na.kind === 'notReady') {
-      headline = na.appt.patient + ' ' + t('now.isInChair', lang) + ' ' + na.appt.chair + ' — ' + na.appt.procedureType + ' ' + t('treatmentPrep.notReady', lang);
+      headline = na.appt.patient + ' ' + t('now.isInChair', lang) + ' ' + na.appt.chair;
       // The first thing standing in the way, not all of them. A list of
       // five gives nobody a first move; when this one is done the card
       // names the next.
-      detail = t('treatmentPrep.missing', lang) + ' ' + na.missing[0];
+      detail = na.appt.procedureType + ' — ' + t('treatmentPrep.notReady', lang) + ' · ' + t('treatmentPrep.missing', lang) + ' ' + na.missing[0];
       cta = t('now.sortIt', lang);
       tone = 'now-alert';
       mark = '🔴';
@@ -38717,7 +38753,9 @@ window.KuBi.Today = function Today({
       className: "now-footer"
     }, /*#__PURE__*/React.createElement("span", {
       className: "now-cta"
-    }, cta, " \u2192"), na.owner ? /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "now-next-label"
+    }, t('now.next', lang), ":"), " ", cta, " \u2192"), na.owner ? /*#__PURE__*/React.createElement("span", {
       className: "now-owner"
     }, t('why.owner', lang), " ", /*#__PURE__*/React.createElement(window.KuBi.RoleBadge, {
       roleId: na.owner,
@@ -38726,49 +38764,6 @@ window.KuBi.Today = function Today({
   }(), /*#__PURE__*/React.createElement("div", {
     className: "today-secondary"
   }, /*#__PURE__*/React.createElement("div", {
-    className: "card readiness-summary today-home-top"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "ready-ring-wrap"
-  }, /*#__PURE__*/React.createElement("svg", {
-    viewBox: "0 0 100 100",
-    className: "ready-ring"
-  }, /*#__PURE__*/React.createElement("circle", {
-    cx: "50",
-    cy: "50",
-    r: "40",
-    className: "ready-ring-track"
-  }), /*#__PURE__*/React.createElement("circle", {
-    cx: "50",
-    cy: "50",
-    r: "40",
-    className: "ready-ring-fill",
-    style: {
-      stroke: readiness.pct >= 100 ? 'var(--green)' : readiness.pct >= 50 ? 'var(--teal)' : 'var(--coral)',
-      strokeDasharray: 2 * Math.PI * 40,
-      strokeDashoffset: 2 * Math.PI * 40 * (1 - readiness.pct / 100)
-    }
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "ready-ring-label"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "ready-ring-pct"
-  }, readiness.pct, "%"), /*#__PURE__*/React.createElement("span", {
-    className: "ready-ring-caption"
-  }, t('todayHome.readiness', lang)))), /*#__PURE__*/React.createElement("div", {
-    className: "ready-summary-right"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "dash-card-label"
-  }, t('todayHome.clinicStatus', lang)), /*#__PURE__*/React.createElement("div", {
-    className: "dash-card-big"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: 'status-dot ' + (clinicStatus.open ? 'status-dot-open' : 'status-dot-closed')
-  }), t(clinicStatus.open ? 'today.openLabel' : 'today.closedLabel', lang), clinicStatus.open ? /*#__PURE__*/React.createElement("span", {
-    className: "today-home-time"
-  }, timeStr(clinicStatus.at)) : null), !clinicStatus.open ? /*#__PURE__*/React.createElement("button", {
-    className: "link-btn",
-    onClick: function () {
-      goTo('clinic', 'opening');
-    }
-  }, t('todayHome.openInClinic', lang)) : null)), /*#__PURE__*/React.createElement("div", {
     className: "card"
   }, /*#__PURE__*/React.createElement("div", {
     className: "card-title"
@@ -38800,6 +38795,48 @@ window.KuBi.Today = function Today({
       className: 'status-pill-small status-select-' + a.status
     }, t('checkinStatus.' + a.status, lang)));
   }))), /*#__PURE__*/React.createElement("div", {
+    className: "card"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "attention-header",
+    onClick: function () {
+      setAttentionOpen(function (v) {
+        return !v;
+      });
+    }
+  }, "          ", /*#__PURE__*/React.createElement("div", {
+    className: "card-title"
+  }, t('todayHome.attention', lang)), attentionItems.length > 0 ? /*#__PURE__*/React.createElement("span", {
+    className: "attention-count"
+  }, "\uD83D\uDD34 ", attentionItems.length, " ", t('todayHome.thingsNeedAttention', lang)) : /*#__PURE__*/React.createElement("span", {
+    className: "attention-count attention-count-clear"
+  }, "\uD83D\uDFE2 ", t('todayHome.allClear', lang))), attentionOpen && attentionItems.length > 0 ? /*#__PURE__*/React.createElement("ul", {
+    className: "checklist attention-list"
+  }, attentionShown.map(function (item) {
+    return /*#__PURE__*/React.createElement("li", {
+      key: item.id,
+      className: "check-item attention-item",
+      onClick: function () {
+        goTo(item.area, item.subtab || null, item.apptId || null, item.room || null);
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "attention-area-tag"
+    }, areaLabel(item.area)), /*#__PURE__*/React.createElement("span", {
+      className: "attention-body"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "attention-text"
+    }, attentionText(item)), item.owner ? /*#__PURE__*/React.createElement("span", {
+      className: "attention-owner"
+    }, t('why.owner', lang), " ", /*#__PURE__*/React.createElement(window.KuBi.RoleBadge, {
+      roleId: item.owner,
+      lang: lang
+    })) : null));
+  }), attentionHidden > 0 ? /*#__PURE__*/React.createElement("li", {
+    className: "check-item attention-item attention-more"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "attention-body"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "attention-text"
+  }, "+", attentionHidden, " ", t('attention.andMore', lang)))) : null) : null), /*#__PURE__*/React.createElement("div", {
     className: "card"
   }, /*#__PURE__*/React.createElement("div", {
     className: "card-title"
@@ -38845,48 +38882,49 @@ window.KuBi.Today = function Today({
       className: "chair-why"
     }, t('why.reason', lang), " ", why) : null);
   }))), /*#__PURE__*/React.createElement("div", {
-    className: "card"
-  }, /*#__PURE__*/React.createElement("button", {
-    className: "attention-header",
-    onClick: function () {
-      setAttentionOpen(function (v) {
-        return !v;
-      });
+    className: "card readiness-summary today-home-top"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ready-ring-wrap"
+  }, /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 100 100",
+    className: "ready-ring"
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: "50",
+    cy: "50",
+    r: "40",
+    className: "ready-ring-track"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "50",
+    cy: "50",
+    r: "40",
+    className: "ready-ring-fill",
+    style: {
+      stroke: readiness.pct >= 100 ? 'var(--green)' : readiness.pct >= 50 ? 'var(--teal)' : 'var(--coral)',
+      strokeDasharray: 2 * Math.PI * 40,
+      strokeDashoffset: 2 * Math.PI * 40 * (1 - readiness.pct / 100)
     }
-  }, "          ", /*#__PURE__*/React.createElement("div", {
-    className: "card-title"
-  }, t('todayHome.attention', lang)), attentionItems.length > 0 ? /*#__PURE__*/React.createElement("span", {
-    className: "attention-count"
-  }, "\uD83D\uDD34 ", attentionItems.length, " ", t('todayHome.thingsNeedAttention', lang)) : /*#__PURE__*/React.createElement("span", {
-    className: "attention-count attention-count-clear"
-  }, "\uD83D\uDFE2 ", t('todayHome.allClear', lang))), attentionOpen && attentionItems.length > 0 ? /*#__PURE__*/React.createElement("ul", {
-    className: "checklist attention-list"
-  }, attentionShown.map(function (item) {
-    return /*#__PURE__*/React.createElement("li", {
-      key: item.id,
-      className: "check-item attention-item",
-      onClick: function () {
-        goTo(item.area, item.subtab || null, item.apptId || null, item.room || null);
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "attention-area-tag"
-    }, areaLabel(item.area)), /*#__PURE__*/React.createElement("span", {
-      className: "attention-body"
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "attention-text"
-    }, attentionText(item)), item.owner ? /*#__PURE__*/React.createElement("span", {
-      className: "attention-owner"
-    }, t('why.owner', lang), " ", /*#__PURE__*/React.createElement(window.KuBi.RoleBadge, {
-      roleId: item.owner,
-      lang: lang
-    })) : null));
-  }), attentionHidden > 0 ? /*#__PURE__*/React.createElement("li", {
-    className: "check-item attention-item attention-more"
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "ready-ring-label"
   }, /*#__PURE__*/React.createElement("span", {
-    className: "attention-body"
+    className: "ready-ring-pct"
+  }, readiness.pct, "%"), /*#__PURE__*/React.createElement("span", {
+    className: "ready-ring-caption"
+  }, t('todayHome.readiness', lang)))), /*#__PURE__*/React.createElement("div", {
+    className: "ready-summary-right"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "dash-card-label"
+  }, t('todayHome.clinicStatus', lang)), /*#__PURE__*/React.createElement("div", {
+    className: "dash-card-big"
   }, /*#__PURE__*/React.createElement("span", {
-    className: "attention-text"
-  }, "+", attentionHidden, " ", t('attention.andMore', lang)))) : null) : null), clinicStatus.open ? function () {
+    className: 'status-dot ' + (clinicStatus.open ? 'status-dot-open' : 'status-dot-closed')
+  }), t(clinicStatus.open ? 'today.openLabel' : 'today.closedLabel', lang), clinicStatus.open ? /*#__PURE__*/React.createElement("span", {
+    className: "today-home-time"
+  }, timeStr(clinicStatus.at)) : null), !clinicStatus.open ? /*#__PURE__*/React.createElement("button", {
+    className: "link-btn",
+    onClick: function () {
+      goTo('clinic', 'opening');
+    }
+  }, t('todayHome.openInClinic', lang)) : null)), clinicStatus.open ? function () {
     const cl = window.KuBi.closingStats(closingChecked);
     return /*#__PURE__*/React.createElement("div", {
       className: "card"
@@ -39126,7 +39164,7 @@ window.KuBi.Clinic = function Clinic({
       className: "kubi-avatar"
     }, "Ku"), /*#__PURE__*/React.createElement("div", {
       className: "kubi-bubble"
-    }, t('closing.subtitle', lang))), renderSectionCards(visibleSections), !clinicStatus.open ? /*#__PURE__*/React.createElement("div", {
+    }, t('closing.subtitle', lang))), renderSectionCards(sectionsForTab), !clinicStatus.open ? /*#__PURE__*/React.createElement("div", {
       className: "card"
     }, /*#__PURE__*/React.createElement("p", {
       className: "module-sub"
@@ -39180,60 +39218,7 @@ window.KuBi.Clinic = function Clinic({
       onClick: function () {
         if (stats.canClose) onClose();
       }
-    }, t('today.closeBtn', lang)), SECTIONS.filter(function (s) {
-      return window.KuBi.CLINIC_SUBTAB_OF[s.id] === 'closing';
-    }).map(function (section) {
-      return /*#__PURE__*/React.createElement("div", {
-        className: "card closing-protocol",
-        key: section.id
-      }, /*#__PURE__*/React.createElement("div", {
-        className: "section-header"
-      }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-        className: "card-title"
-      }, pick(section.title, lang)), section.subtitle ? /*#__PURE__*/React.createElement("div", {
-        className: "section-subtitle"
-      }, pick(section.subtitle, lang)) : null), /*#__PURE__*/React.createElement("div", {
-        className: "owner-badges"
-      }, section.ownerRole ? /*#__PURE__*/React.createElement("span", {
-        className: "owner-badge-pair"
-      }, /*#__PURE__*/React.createElement("span", {
-        className: "owner-label"
-      }, t('readiness.owner', lang)), /*#__PURE__*/React.createElement(RoleBadge, {
-        roleId: section.ownerRole,
-        lang: lang
-      })) : null)), section.groups.map(function (group, gi) {
-        return /*#__PURE__*/React.createElement("ul", {
-          className: "checklist",
-          key: gi
-        }, group.tasks.map(function (task, ti) {
-          const key = window.KuBi.taskKey(section, gi, ti, null);
-          const c = checked[key];
-          return /*#__PURE__*/React.createElement("li", {
-            key: key,
-            className: c ? 'check-item check-item-done' : 'check-item'
-          }, /*#__PURE__*/React.createElement("label", null, /*#__PURE__*/React.createElement("input", {
-            type: "checkbox",
-            checked: !!c,
-            onChange: function () {
-              onToggle(key, currentUser.name);
-            }
-          }), /*#__PURE__*/React.createElement("span", {
-            className: "task-block"
-          }, /*#__PURE__*/React.createElement("span", {
-            className: "task-label"
-          }, pick(task.label, lang)), task.details && task.details.length ? /*#__PURE__*/React.createElement("span", {
-            className: "task-details"
-          }, task.details.map(function (d, di) {
-            return /*#__PURE__*/React.createElement("span", {
-              key: di,
-              className: "task-detail-line"
-            }, pick(d, lang));
-          })) : null)), c ? /*#__PURE__*/React.createElement("span", {
-            className: "checked-by"
-          }, "\u2713 ", c.by) : null);
-        }));
-      }));
-    })));
+    }, t('today.closeBtn', lang))));
   }()) : /*#__PURE__*/React.createElement(React.Fragment, null, subtab === 'equipment' ? /*#__PURE__*/React.createElement("div", {
     className: "card"
   }, /*#__PURE__*/React.createElement("div", {
@@ -41180,6 +41165,7 @@ function Shell({
     }, t('empty.noModules', lang));
     if (activeArea === 'today') {
       return /*#__PURE__*/React.createElement(ActiveComponent, {
+        currentUser: user,
         lang: lang,
         clinicStatus: clinicStatus,
         appointments: appointments,

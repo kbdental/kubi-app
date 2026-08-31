@@ -269,6 +269,7 @@ function Shell({ user, onLogout, lang, setLang }) {
     if (activeArea === 'today') {
       return (
         <ActiveComponent
+          currentUser={user}
           lang={lang}
           clinicStatus={clinicStatus}
           appointments={appointments}

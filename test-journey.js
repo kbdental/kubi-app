@@ -65,6 +65,23 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
 
   // 3. NOW card says clinic closed
   check('NOW card prompts to open clinic', /isn.t open yet|Open the Clinic/i.test(text()));
+  check('Today greets the person signed in', /Good (morning|afternoon|evening), Viveyk/.test(text()));
+
+  // Not just the label: the card must carry the action the engine chose.
+  // Matching "NEXT:" alone would pass with the action missing entirely.
+  const nowCta = (doc().querySelector('.now-cta') || {}).textContent || '';
+  check('NOW card names the actual next step',
+        /NEXT:/.test(nowCta) && /Open the Clinic/.test(nowCta), nowCta.replace(/\s+/g, ' ').trim());
+
+  // Hierarchy, read from the DOM in render order rather than by searching
+  // text. Attention must sit ABOVE the chair tiles and the readiness ring —
+  // that is what this change actually moved, and a text search for
+  // "NOW < Patients < Attention" was true before it too.
+  const cardTitles = Array.from(doc().querySelectorAll('.main .card .card-title')).map(e => e.textContent.trim());
+  const at = label => cardTitles.findIndex(x => new RegExp(label, 'i').test(x));
+  check('Patients and attention sit above the reference cards',
+        at('Patients') >= 0 && at('Attention') > at('Patients') && at('Treatment') > at('Attention'),
+        cardTitles.join(' | '));
   // Red means something is wrong. A clinic that simply has not opened yet
   // is not a fault, and must not borrow the colour of one.
   const nowCls = (doc().querySelector('.now-card') || {}).className || '';
@@ -138,6 +155,11 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   await step(() => click(Array.from(doc().querySelectorAll('.toggle-btn')).find(b => /Closing/.test(b.textContent))));
   check('Closing gate present', /Clinic Cannot Close|Clinic May Close/i.test(text()));
   check('Fumigation under Closing', /Fumigation/i.test(text()));
+  // It was rendered twice: once by the shared section renderer and again by
+  // a bespoke copy of the same markup. Presence alone could not see that.
+  check('Fumigation appears exactly once',
+        (text().match(/Fumigation Protocol/g) || []).length === 1,
+        (text().match(/Fumigation Protocol/g) || []).length + ' copies');
   check('Lights and AC on the closing gate', /Lights, fans & AC/i.test(text()));
 
   // 11. PATIENT JOURNEY
@@ -240,6 +262,20 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   const fdNavs = Array.from(doc().querySelectorAll('.nav-item')).map(n => n.textContent);
   check('Front Desk cannot see Management', !fdNavs.some(n => /Management/.test(n)), fdNavs.join(' | '));
   check('Front Desk cannot see MIS', !fdNavs.some(n => /MIS/.test(n)));
+
+  // 20b. Closing is done by whoever is closing up, not only by the role that
+  //      owns the section. Front Desk does not own fumigation, and the Closing
+  //      tab has no My Checklist / Full Procedure toggle — so if that tab were
+  //      filtered by ownership, the protocol would be invisible with no way
+  //      back. Every check above this point runs as owner/admin, who owns no
+  //      section and so never sees that filter.
+  await step(() => click(navByText(/Clinic$/)));
+  await step(() => click(Array.from(doc().querySelectorAll('.sub-tab-row .toggle-btn')).find(b => /Closing/.test(b.textContent))));
+  await step(() => {}, 200);
+  const fdFumigation = (text().match(/Fumigation Protocol/g) || []).length;
+  check('Fumigation is visible to a role that does not own it', fdFumigation === 1, fdFumigation + ' copies');
+  check('...and is tickable there', doc().querySelectorAll('.card input[type=checkbox]').length > 0,
+        doc().querySelectorAll('.card input[type=checkbox]').length + ' checkboxes');
 
   // 21. HINDI TOGGLE
   await step(() => click(Array.from(doc().querySelectorAll('.lang-btn')).find(b => /हिं/.test(b.textContent))));

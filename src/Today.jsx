@@ -11,7 +11,17 @@ function timeStr(d) {
   return d ? new Date(d).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
 }
 
-window.KuBi.Today = function Today({ lang, clinicStatus, appointments, checked, treatmentChecked, treatmentCheckedAfter, procedureState, closedCases, closingChecked, equipmentStatus, sterPacks, repairs, labReceived, goTo }) {
+// Employee names already carry "Dr." where it applies, so greeting by name
+// is right for a dentist and for an assistant alike — no honorific logic,
+// and no chance of calling the receptionist "Doctor".
+function greetingKey(now) {
+  const h = (now || new Date()).getHours();
+  if (h < 12) return 'today.goodMorning';
+  if (h < 17) return 'today.goodAfternoon';
+  return 'today.goodEvening';
+}
+
+window.KuBi.Today = function Today({ currentUser, lang, clinicStatus, appointments, checked, treatmentChecked, treatmentCheckedAfter, procedureState, closedCases, closingChecked, equipmentStatus, sterPacks, repairs, labReceived, goTo }) {
   const t = window.KuBi.t;
   const [attentionOpen, setAttentionOpen] = React.useState(false);
 
@@ -44,6 +54,7 @@ window.KuBi.Today = function Today({ lang, clinicStatus, appointments, checked, 
     <div className="module">
       <div className="module-head">
         <h2>{t('nav.today', lang)}</h2>
+        <p className="today-greeting">{t(greetingKey(), lang)}, {currentUser.name}</p>
       </div>
 
       {(function () {
@@ -84,7 +95,10 @@ window.KuBi.Today = function Today({ lang, clinicStatus, appointments, checked, 
           // going normally, not a problem.
           tone = 'now-neutral'; mark = '🔵';
         } else if (na.kind === 'inProgress') {
-          headline = na.appt.patient + ' — ' + na.appt.procedureType + ' ' + t('now.underway', lang);
+          // Who and where on the first line, what on the second. A staff
+          // member should get the situation from the headline alone.
+          headline = na.appt.patient + ' ' + t('now.isInChair', lang) + ' ' + na.appt.chair;
+          detail = na.appt.procedureType + ' — ' + t('now.underway', lang);
           cta = t('proc.completeBtn', lang);
           tone = 'now-live'; mark = '🔵';
         } else if (na.kind === 'needsDocumentation') {
@@ -93,15 +107,17 @@ window.KuBi.Today = function Today({ lang, clinicStatus, appointments, checked, 
           cta = t('now.recordIt', lang);
           tone = 'now-alert'; mark = '🔴';
         } else if (na.kind === 'readyToStart') {
-          headline = na.appt.patient + ' ' + t('now.isInChair', lang) + ' ' + na.appt.chair + ' — ' + na.appt.procedureType + ' ' + t('now.readyToStart', lang);
+          headline = na.appt.patient + ' ' + t('now.isInChair', lang) + ' ' + na.appt.chair;
+          detail = na.appt.procedureType + ' — ' + t('now.readyToStart', lang);
           cta = t('proc.startBtn', lang);
           tone = 'now-good'; mark = '🔵';
         } else if (na.kind === 'notReady') {
-          headline = na.appt.patient + ' ' + t('now.isInChair', lang) + ' ' + na.appt.chair + ' — ' + na.appt.procedureType + ' ' + t('treatmentPrep.notReady', lang);
+          headline = na.appt.patient + ' ' + t('now.isInChair', lang) + ' ' + na.appt.chair;
           // The first thing standing in the way, not all of them. A list of
           // five gives nobody a first move; when this one is done the card
           // names the next.
-          detail = t('treatmentPrep.missing', lang) + ' ' + na.missing[0];
+          detail = na.appt.procedureType + ' — ' + t('treatmentPrep.notReady', lang) +
+                   ' · ' + t('treatmentPrep.missing', lang) + ' ' + na.missing[0];
           cta = t('now.sortIt', lang);
           tone = 'now-alert'; mark = '🔴';
         } else if (na.kind === 'chairNotReady') {
@@ -146,7 +162,7 @@ window.KuBi.Today = function Today({ lang, clinicStatus, appointments, checked, 
             <div className="now-headline">{headline}</div>
             {detail ? <div className="now-detail">{detail}</div> : null}
             <div className="now-footer">
-              <span className="now-cta">{cta} →</span>
+              <span className="now-cta"><span className="now-next-label">{t('now.next', lang)}:</span> {cta} →</span>
               {na.owner ? (
                 <span className="now-owner">
                   {t('why.owner', lang)} <window.KuBi.RoleBadge roleId={na.owner} lang={lang} />
@@ -158,34 +174,6 @@ window.KuBi.Today = function Today({ lang, clinicStatus, appointments, checked, 
       })()}
 
       <div className="today-secondary">
-      <div className="card readiness-summary today-home-top">
-        <div className="ready-ring-wrap">
-          <svg viewBox="0 0 100 100" className="ready-ring">
-            <circle cx="50" cy="50" r="40" className="ready-ring-track" />
-            <circle cx="50" cy="50" r="40" className="ready-ring-fill" style={{
-              stroke: readiness.pct >= 100 ? 'var(--green)' : readiness.pct >= 50 ? 'var(--teal)' : 'var(--coral)',
-              strokeDasharray: 2 * Math.PI * 40,
-              strokeDashoffset: 2 * Math.PI * 40 * (1 - readiness.pct / 100),
-            }} />
-          </svg>
-          <div className="ready-ring-label">
-            <span className="ready-ring-pct">{readiness.pct}%</span>
-            <span className="ready-ring-caption">{t('todayHome.readiness', lang)}</span>
-          </div>
-        </div>
-        <div className="ready-summary-right">
-          <div className="dash-card-label">{t('todayHome.clinicStatus', lang)}</div>
-          <div className="dash-card-big">
-            <span className={'status-dot ' + (clinicStatus.open ? 'status-dot-open' : 'status-dot-closed')} />
-            {t(clinicStatus.open ? 'today.openLabel' : 'today.closedLabel', lang)}
-            {clinicStatus.open ? <span className="today-home-time">{timeStr(clinicStatus.at)}</span> : null}
-          </div>
-          {!clinicStatus.open ? (
-            <button className="link-btn" onClick={function () { goTo('clinic', 'opening'); }}>{t('todayHome.openInClinic', lang)}</button>
-          ) : null}
-        </div>
-      </div>
-
       <div className="card">
         <div className="card-title">{t('todayHome.patients', lang)}</div>
         {sortedAppts.length === 0 ? <div className="module-sub">{t('todayHome.noAppointments', lang)}</div> : (
@@ -207,6 +195,42 @@ window.KuBi.Today = function Today({ lang, clinicStatus, appointments, checked, 
             })}
           </ul>
         )}
+      </div>
+
+      <div className="card">
+        <button className="attention-header" onClick={function () { setAttentionOpen(function (v) { return !v; }); }}>          <div className="card-title">{t('todayHome.attention', lang)}</div>
+          {attentionItems.length > 0 ? (
+            <span className="attention-count">🔴 {attentionItems.length} {t('todayHome.thingsNeedAttention', lang)}</span>
+          ) : (
+            <span className="attention-count attention-count-clear">🟢 {t('todayHome.allClear', lang)}</span>
+          )}
+        </button>
+        {attentionOpen && attentionItems.length > 0 ? (
+          <ul className="checklist attention-list">
+            {attentionShown.map(function (item) {
+              return (
+                <li key={item.id} className="check-item attention-item" onClick={function () { goTo(item.area, item.subtab || null, item.apptId || null, item.room || null); }}>
+                  <span className="attention-area-tag">{areaLabel(item.area)}</span>
+                  <span className="attention-body">
+                    <span className="attention-text">{attentionText(item)}</span>
+                    {item.owner ? (
+                      <span className="attention-owner">
+                        {t('why.owner', lang)} <window.KuBi.RoleBadge roleId={item.owner} lang={lang} />
+                      </span>
+                    ) : null}
+                  </span>
+                </li>
+              );
+            })}
+            {attentionHidden > 0 ? (
+              <li className="check-item attention-item attention-more">
+                <span className="attention-body">
+                  <span className="attention-text">+{attentionHidden} {t('attention.andMore', lang)}</span>
+                </span>
+              </li>
+            ) : null}
+          </ul>
+        ) : null}
       </div>
 
       <div className="card">
@@ -252,40 +276,32 @@ window.KuBi.Today = function Today({ lang, clinicStatus, appointments, checked, 
         </div>
       </div>
 
-      <div className="card">
-        <button className="attention-header" onClick={function () { setAttentionOpen(function (v) { return !v; }); }}>          <div className="card-title">{t('todayHome.attention', lang)}</div>
-          {attentionItems.length > 0 ? (
-            <span className="attention-count">🔴 {attentionItems.length} {t('todayHome.thingsNeedAttention', lang)}</span>
-          ) : (
-            <span className="attention-count attention-count-clear">🟢 {t('todayHome.allClear', lang)}</span>
-          )}
-        </button>
-        {attentionOpen && attentionItems.length > 0 ? (
-          <ul className="checklist attention-list">
-            {attentionShown.map(function (item) {
-              return (
-                <li key={item.id} className="check-item attention-item" onClick={function () { goTo(item.area, item.subtab || null, item.apptId || null, item.room || null); }}>
-                  <span className="attention-area-tag">{areaLabel(item.area)}</span>
-                  <span className="attention-body">
-                    <span className="attention-text">{attentionText(item)}</span>
-                    {item.owner ? (
-                      <span className="attention-owner">
-                        {t('why.owner', lang)} <window.KuBi.RoleBadge roleId={item.owner} lang={lang} />
-                      </span>
-                    ) : null}
-                  </span>
-                </li>
-              );
-            })}
-            {attentionHidden > 0 ? (
-              <li className="check-item attention-item attention-more">
-                <span className="attention-body">
-                  <span className="attention-text">+{attentionHidden} {t('attention.andMore', lang)}</span>
-                </span>
-              </li>
-            ) : null}
-          </ul>
-        ) : null}
+      <div className="card readiness-summary today-home-top">
+        <div className="ready-ring-wrap">
+          <svg viewBox="0 0 100 100" className="ready-ring">
+            <circle cx="50" cy="50" r="40" className="ready-ring-track" />
+            <circle cx="50" cy="50" r="40" className="ready-ring-fill" style={{
+              stroke: readiness.pct >= 100 ? 'var(--green)' : readiness.pct >= 50 ? 'var(--teal)' : 'var(--coral)',
+              strokeDasharray: 2 * Math.PI * 40,
+              strokeDashoffset: 2 * Math.PI * 40 * (1 - readiness.pct / 100),
+            }} />
+          </svg>
+          <div className="ready-ring-label">
+            <span className="ready-ring-pct">{readiness.pct}%</span>
+            <span className="ready-ring-caption">{t('todayHome.readiness', lang)}</span>
+          </div>
+        </div>
+        <div className="ready-summary-right">
+          <div className="dash-card-label">{t('todayHome.clinicStatus', lang)}</div>
+          <div className="dash-card-big">
+            <span className={'status-dot ' + (clinicStatus.open ? 'status-dot-open' : 'status-dot-closed')} />
+            {t(clinicStatus.open ? 'today.openLabel' : 'today.closedLabel', lang)}
+            {clinicStatus.open ? <span className="today-home-time">{timeStr(clinicStatus.at)}</span> : null}
+          </div>
+          {!clinicStatus.open ? (
+            <button className="link-btn" onClick={function () { goTo('clinic', 'opening'); }}>{t('todayHome.openInClinic', lang)}</button>
+          ) : null}
+        </div>
       </div>
 
       {clinicStatus.open ? (function () {

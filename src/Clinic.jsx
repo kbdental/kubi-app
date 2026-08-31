@@ -201,7 +201,12 @@ window.KuBi.Clinic = function Clinic({ currentUser, lang, checked, onToggle, cli
                   <div className="kubi-bubble">{t('closing.subtitle', lang)}</div>
                 </div>
 
-                {renderSectionCards(visibleSections)}
+                {/* sectionsForTab, NOT visibleSections: the closing tab has
+                    no My Checklist / Full Procedure toggle, so filtering by
+                    who owns the section would hide fumigation from everyone
+                    who does not own it — including the Clinic Manager, who
+                    is the one closing up. */}
+                {renderSectionCards(sectionsForTab)}
 
                 {!clinicStatus.open ? (
                   <div className="card"><p className="module-sub">{t('closing.openFirst', lang)}</p></div>
@@ -256,55 +261,6 @@ window.KuBi.Clinic = function Clinic({ currentUser, lang, checked, onToggle, cli
                     >
                       {t('today.closeBtn', lang)}
                     </button>
-
-                    {/* Fumigation is an end-of-day protocol, so it lives
-                        here rather than with the daily readiness sections. */}
-                    {SECTIONS.filter(function (s) { return window.KuBi.CLINIC_SUBTAB_OF[s.id] === 'closing'; }).map(function (section) {
-                      return (
-                        <div className="card closing-protocol" key={section.id}>
-                          <div className="section-header">
-                            <div>
-                              <div className="card-title">{pick(section.title, lang)}</div>
-                              {section.subtitle ? <div className="section-subtitle">{pick(section.subtitle, lang)}</div> : null}
-                            </div>
-                            <div className="owner-badges">
-                              {section.ownerRole ? (
-                                <span className="owner-badge-pair">
-                                  <span className="owner-label">{t('readiness.owner', lang)}</span>
-                                  <RoleBadge roleId={section.ownerRole} lang={lang} />
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
-                          {section.groups.map(function (group, gi) {
-                            return (
-                              <ul className="checklist" key={gi}>
-                                {group.tasks.map(function (task, ti) {
-                                  const key = window.KuBi.taskKey(section, gi, ti, null);
-                                  const c = checked[key];
-                                  return (
-                                    <li key={key} className={c ? 'check-item check-item-done' : 'check-item'}>
-                                      <label>
-                                        <input type="checkbox" checked={!!c} onChange={function () { onToggle(key, currentUser.name); }} />
-                                        <span className="task-block">
-                                          <span className="task-label">{pick(task.label, lang)}</span>
-                                          {task.details && task.details.length ? (
-                                            <span className="task-details">
-                                              {task.details.map(function (d, di) { return <span key={di} className="task-detail-line">{pick(d, lang)}</span>; })}
-                                            </span>
-                                          ) : null}
-                                        </span>
-                                      </label>
-                                      {c ? <span className="checked-by">✓ {c.by}</span> : null}
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            );
-                          })}
-                        </div>
-                      );
-                    })}
                   </React.Fragment>
                 )}
               </React.Fragment>

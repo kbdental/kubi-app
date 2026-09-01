@@ -8,7 +8,10 @@
  * ── Deploy ───────────────────────────────────────────────────────────
  * 1. Open the Google Sheet that should hold the history.
  * 2. Extensions > Apps Script, paste this file in, and save.
- * 3. Set TOKEN below to a private string of your choosing.
+ * 3. TOKEN below must match SHEETS_CONFIG.token in src/sheetsSync.js.
+ *    An EMPTY token means no check at all: the deployment has to be
+ *    "Anyone" for a clinic PC to reach it, so with no token whoever has
+ *    the URL can read and write the clinic's day, patient names included.
  * 4. Deploy > New deployment > Web app.
  *       Execute as:       Me
  *       Who has access:   Anyone
@@ -22,7 +25,7 @@
  * be live at the same URL.
  */
 
-var TOKEN = '';                    // must match SHEETS_CONFIG.token in KuBi
+var TOKEN = 'kb-b5mdu6-vpa25g-fkxfcf';   // must match SHEETS_CONFIG.token in KuBi
 var SHEET_NAME = 'KuBi History';   // one row per finished day
 var DAY_SHEET_NAME = 'KuBi Day';   // the day in progress, so a refresh loses nothing
 

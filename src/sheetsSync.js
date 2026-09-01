@@ -1,4 +1,4 @@
-// sheetsSync.js — the one place that talks to Google Sheets.
+﻿// sheetsSync.js â€” the one place that talks to Google Sheets.
 //
 // KuBi still runs from a local file with no server. This module is the
 // only part that reaches the network, and it is entirely optional: leave
@@ -7,7 +7,7 @@
 //
 // Transport is a plain fetch to an Apps Script web app, the same shape
 // the clinic's other tools use: GET with a query string to read, POST
-// with text/plain to write. text/plain matters — it keeps the request
+// with text/plain to write. text/plain matters â€” it keeps the request
 // "simple" in CORS terms, so the browser sends it without a preflight,
 // which an Apps Script /exec endpoint cannot answer.
 //
@@ -17,27 +17,27 @@
 window.KuBi = window.KuBi || {};
 
 // ---------------------------------------------------------------------
-// CONFIG — the clinic fills these two in after deploying KuBi_History.gs.
+// CONFIG â€” the clinic fills these two in after deploying KuBi_History.gs.
 // url:   the web app's /exec URL
 // token: the same string set as TOKEN in the script
 // Leave both empty to run without any sync at all.
 // ---------------------------------------------------------------------
 window.KuBi.SHEETS_CONFIG = {
-  url: '',
-  token: '',
+  url: 'https://script.google.com/macros/s/AKfycbxj5wFwoIUKwSMJbBvmlBbgEw5nANW_KmUI6pzf-tOHpfTBxV8sb7QODiyhtT73bryb/exec',
+  token: 'kb-b5mdu6-vpa25g-fkxfcf',
 };
 
 window.KuBi.historySync = (function () {
   const TIMEOUT_MS = 8000;
 
-  function config() { return window.KuBi.SHEETS_CONFIG || { url: '', token: '' }; }
+  function config() { return window.KuBi.SHEETS_CONFIG || { url: 'https://script.google.com/macros/s/AKfycbxj5wFwoIUKwSMJbBvmlBbgEw5nANW_KmUI6pzf-tOHpfTBxV8sb7QODiyhtT73bryb/exec', token: '' }; }
 
   function isConfigured() {
     const c = config();
     return !!(c.url && typeof window.fetch === 'function');
   }
 
-  // Resolves to null on any failure — never rejects, never throws.
+  // Resolves to null on any failure â€” never rejects, never throws.
   function request(opts) {
     if (!isConfigured()) return Promise.resolve(null);
     const c = config();
@@ -53,7 +53,7 @@ window.KuBi.historySync = (function () {
                 (opts.extra || '');
       const init = { method: opts.body ? 'POST' : 'GET' };
       if (opts.body) {
-        // text/plain keeps this a simple request — no CORS preflight.
+        // text/plain keeps this a simple request â€” no CORS preflight.
         init.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
         init.body = JSON.stringify(opts.body);
       }
@@ -71,7 +71,7 @@ window.KuBi.historySync = (function () {
     isConfigured: isConfigured,
 
     // Resolves to an array of snapshots, or null if unreachable. An empty
-    // array means "reached the sheet, it holds nothing" — a real answer,
+    // array means "reached the sheet, it holds nothing" â€” a real answer,
     // and deliberately distinct from null.
     load: function () {
       return request({ action: 'historyAll' }).then(function (json) {
@@ -124,3 +124,5 @@ window.KuBi.historySync = (function () {
     },
   };
 })();
+
+

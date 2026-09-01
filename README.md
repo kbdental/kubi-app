@@ -107,6 +107,14 @@ through on change. Configure it in `src/sheetsSync.js`:
 window.KuBi.SHEETS_CONFIG = { url: '<web app /exec URL>', token: '<token>' };
 ```
 
+The clinic's own deployment is already configured in `SHEETS_CONFIG`. The
+URL and token are in this repo and inside `KuBi.html`, because a file
+staff open by double-clicking has nowhere else to keep them. Treat both as
+private: the deployment must be "Anyone" for a clinic PC to reach it
+without a Google login, so the token is what stands between the URL and
+the clinic's day. To rotate it, change TOKEN in the .gs, re-deploy as a
+NEW VERSION, change `token` here, and rebuild — in that order.
+
 `apps-script/KuBi_History.gs` is the other half — paste it into the
 sheet's Apps Script editor and deploy it as a web app. Deployment steps
 are in the file's header comment. It keeps two sheets: **KuBi History**,

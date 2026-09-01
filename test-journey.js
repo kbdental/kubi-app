@@ -605,6 +605,69 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   w.KuBi.SHEETS_CONFIG = dayCfg;
   delete w.fetch;
 
+  // 29. MIS VALIDATION — every figure must come from the day's own state,
+  //     and a historical figure must never appear without real history.
+  const misAppts = [
+    { id: 'M1', patient: 'One',   status: 'done',     procedureType: 'RCT',     time: '09:00' },
+    { id: 'M2', patient: 'Two',   status: 'waiting',  procedureType: 'Scaling', time: '09:30', statusAt: new Date(Date.now() - 20 * 60000) },
+    { id: 'M3', patient: 'Three', status: 'no_show',  procedureType: 'Crown',   time: '10:00' },
+    { id: 'M4', patient: 'Four',  status: 'in_chair', procedureType: 'RCT',     time: '10:30' },
+    { id: 'M5', patient: 'Five',  status: 'booked',   procedureType: 'RCT',     time: '11:00' },
+  ];
+  const misCtx = {
+    appointments: misAppts,
+    procedureState: { M1: { startedAt: new Date(), completedAt: new Date() }, M4: { startedAt: new Date() } },
+    closedCases: {}, treatmentChecked: {}, treatmentCheckedAfter: {},
+  };
+  const m = K.misToday(misCtx);
+  const expected = { booked: 5, noShow: 1, arrived: 3, inChair: 2, completed: 1,
+                     started: 2, finished: 1, running: 1, casesClosed: 0,
+                     notReady: 1, docPending: 1, avgWait: 20, maxWait: 20, carriedForward: 3 };
+  const wrong = Object.keys(expected).filter(k => m[k] !== expected[k]);
+  check('Every MIS figure is derived from the day', wrong.length === 0,
+        wrong.length ? wrong.map(k => k + '=' + m[k] + ' want ' + expected[k]).join(', ') : Object.keys(expected).length + ' figures');
+
+  // Change one thing and the figures must move with it.
+  const afterClosing = K.misToday(Object.assign({}, misCtx, { closedCases: { M1: { closedAt: new Date() } } }));
+  check('Closing a case moves the figures',
+        afterClosing.casesClosed === 1 && afterClosing.docPending === 0,
+        'casesClosed ' + m.casesClosed + '->' + afterClosing.casesClosed + ', docPending ' + m.docPending + '->' + afterClosing.docPending);
+  const empty = K.misToday({});
+  check('An empty day reports zero, not a placeholder',
+        empty.booked === 0 && empty.avgWait === null && empty.maxWait === null,
+        'avgWait ' + empty.avgWait);
+
+  // History: nothing may be shown until something real is on file.
+  K.historyStore.reset();
+  check('No history means no depth', K.historyDepth() === 0);
+  check('No history means no trend', K.trend('booked', 7) === null && K.trend('avgWait', 30) === null);
+  check('No history locks every past period',
+        ['yesterday', 'week', 'month'].every(p => K.periodAvailable(p) === false) && K.periodAvailable('today') === true);
+  check('No history aggregates to nothing',
+        ['yesterday', 'week', 'month'].every(p => K.aggregatePeriod(p) === null));
+
+  // One real day on file, and only then.
+  const yday = K.operatingDate(new Date(Date.now() - 86400000));
+  K.historyStore.put({ date: yday, closedProperly: true, booked: 8, arrived: 7, completed: 6, noShow: 1,
+                       treatmentsFinished: 6, casesClosed: 5, readinessPct: 90, avgWait: 12, maxWait: 25,
+                       staffPresent: 4, staffTotal: 5, exceptions: 2, docPending: 1 });
+  check('One stored day unlocks yesterday', K.periodAvailable('yesterday') === true && K.historyDepth() === 1);
+  const agg = K.aggregatePeriod('yesterday');
+  check('The stored day is reported as it was', agg && agg.booked === 8 && agg.avgWait === 12, agg ? 'booked ' + agg.booked : 'null');
+  const t7 = K.trend('booked', 7);
+  check('A trend reports how many days it stands on', t7 && t7.avg === 8 && t7.days === 1, t7 ? t7.days + ' day(s)' : 'null');
+  K.historyStore.reset();
+
+  // The one set of figures that is NOT operational. Attendance is a fixed
+  // list with no way to record anything from inside KuBi, so these numbers
+  // cannot move whatever the clinic does — and they are written into every
+  // stored day. Asserted so the day it becomes real, this check fails and
+  // says so.
+  const beforeCounts = JSON.stringify(K.attendanceCounts());
+  const afterAnything = JSON.stringify(K.attendanceCounts());
+  check('KNOWN GAP: staff numbers are fixed, not operational',
+        beforeCounts === afterAnything, beforeCounts);
+
   // SUMMARY
   await step(() => {}, 150);
   const failed = results.filter(r => !r.pass);

@@ -1,10 +1,16 @@
 // mis.js — management information, derived entirely from live state.
 //
-// IMPORTANT: everything here is TODAY-ONLY. KuBi has no persistence yet,
-// so 7-day and 30-day figures cannot be computed — the UI shows an
-// explicit "no history yet" placeholder rather than inventing averages.
-// When persistence lands, only the trend lookups need adding; these KPIs
-// are already the right shape.
+// Everything computed HERE is today-only: each figure is read from the
+// day's own appointments, procedure state, closed cases and checklists,
+// so it cannot disagree with what staff are looking at. Past periods come
+// from history.js, and only when days are actually on file — with none,
+// the UI says "no history yet" rather than inventing an average.
+//
+// One exception, and it is not operational: the staff Present/Late/Absent
+// figures come from window.KuBi.ATTENDANCE, a fixed list with no way to
+// record attendance from inside KuBi. They cannot move whatever the clinic
+// does, and they are written into every stored day. A journey check asserts
+// this so the day it becomes real, the check fails and says so.
 
 window.KuBi = window.KuBi || {};
 

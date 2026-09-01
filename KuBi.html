@@ -624,6 +624,39 @@
   .today-greeting { color: var(--ink-soft); font-size: 14px; margin: 2px 0 0; }
   .now-next-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; opacity: 0.75; }
 
+  /* ---------- Case view ---------- */
+  .case-view { padding: 20px; }
+  .case-back { margin-bottom: 16px; }
+  .case-patient { font-family: var(--font-display); font-size: 24px; letter-spacing: -0.01em; }
+  .case-eyebrow {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--ink-soft); margin-top: 6px;
+  }
+  .case-treatment { font-size: 17px; font-weight: 600; margin-top: 2px; }
+  .case-diagnosis { font-size: 13px; color: var(--ink-soft); margin-top: 4px; }
+  .case-nownext { display: flex; gap: 32px; flex-wrap: wrap; margin: 18px 0 4px; }
+  .case-nownext > div { display: flex; flex-direction: column; gap: 3px; }
+  .case-stage-now { font-size: 16px; font-weight: 650; }
+  .case-stage-next { font-size: 16px; color: var(--ink-soft); }
+  .case-visits-label { display: block; margin-top: 18px; }
+  .case-visit-list { list-style: none; margin: 8px 0 0; padding: 0; }
+  .case-visit { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 14px; }
+  .case-visit-mark { width: 16px; text-align: center; }
+  .case-visit-done .case-visit-name { color: var(--ink-soft); }
+  .case-visit-now .case-visit-name { font-weight: 650; }
+  .case-visit-future .case-visit-name { color: var(--ink-faint, #8593a0); }
+  .case-status-block { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .case-status-row { display: flex; justify-content: space-between; gap: 16px; padding: 5px 0; font-size: 14px; }
+  .case-status-label {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .case-status-value { text-align: right; }
+  .case-status-good { color: var(--green); font-weight: 600; }
+  .case-status-warn { color: var(--ink-soft); }
+  .case-status-bad { color: var(--coral); font-weight: 600; }
+  .case-link { font-weight: 600; text-align: left; }
+
   /* ---------- Repairs ---------- */
   .repair-card { margin-bottom: 16px; }
   .repair-count {
@@ -754,7 +787,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 01 Sept 2026, 02:57 pm';
+  window.KuBi.BUILD_STAMP = 'Build: 01 Sept 2026, 03:04 pm';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -34161,6 +34194,102 @@ window.KuBi.STRINGS = {
     en: 'Not returned',
     hi: 'वापस नहीं आए'
   },
+  'case.open': {
+    en: 'Open case',
+    hi: 'खुला केस'
+  },
+  'case.active': {
+    en: 'Active case',
+    hi: 'चालू केस'
+  },
+  'case.diagnosis': {
+    en: 'Diagnosis',
+    hi: 'निदान'
+  },
+  'case.current': {
+    en: 'Current',
+    hi: 'अभी'
+  },
+  'case.next': {
+    en: 'Next',
+    hi: 'आगे'
+  },
+  'case.visits': {
+    en: 'Visits',
+    hi: 'विज़िट'
+  },
+  'case.today': {
+    en: 'Today',
+    hi: 'आज'
+  },
+  'case.notToday': {
+    en: 'Not booked in today',
+    hi: 'आज अपॉइंटमेंट नहीं है'
+  },
+  'case.status': {
+    en: 'Case status',
+    hi: 'केस की स्थिति'
+  },
+  'case.before': {
+    en: 'Before',
+    hi: 'पहले'
+  },
+  'case.procedure': {
+    en: 'Procedure',
+    hi: 'प्रोसीज़र'
+  },
+  'case.after': {
+    en: 'After',
+    hi: 'बाद में'
+  },
+  'case.closure': {
+    en: 'Closure',
+    hi: 'समापन'
+  },
+  'case.complete': {
+    en: 'Complete',
+    hi: 'पूरा'
+  },
+  'case.inProgress': {
+    en: 'In progress',
+    hi: 'चल रहा है'
+  },
+  'case.pending': {
+    en: 'Pending',
+    hi: 'बाकी'
+  },
+  'case.notYet': {
+    en: 'Not yet',
+    hi: 'अभी नहीं'
+  },
+  'case.closed': {
+    en: 'Closed',
+    hi: 'बंद'
+  },
+  'case.notApplicable': {
+    en: 'No visit today',
+    hi: 'आज कोई विज़िट नहीं'
+  },
+  'case.lab': {
+    en: 'Lab',
+    hi: 'लैब'
+  },
+  'case.followUp': {
+    en: 'Follow-up',
+    hi: 'फॉलो-अप'
+  },
+  'case.none': {
+    en: 'None',
+    hi: 'कोई नहीं'
+  },
+  'case.back': {
+    en: 'Back',
+    hi: 'वापस'
+  },
+  'case.noCase': {
+    en: 'No case recorded for this patient.',
+    hi: 'इस मरीज़ का कोई केस दर्ज नहीं है।'
+  },
   'lapsed.title': {
     en: 'Patients who stopped coming',
     hi: 'जो मरीज़ आना बंद कर गए'
@@ -39935,13 +40064,124 @@ window.KuBi.Patients = function Patients({
   initialApptId,
   initialSubtab,
   labReceived,
-  onLabReceived
+  onLabReceived,
+  treatmentChecked,
+  treatmentCheckedAfter,
+  procedureState,
+  closedCases
 }) {
   const t = window.KuBi.t;
   const RoleBadge = window.KuBi.RoleBadge;
   const readiness = window.KuBi.PRE_ARRIVAL_READINESS;
   const STATUSES = window.KuBi.CHECKIN_STATUSES;
   const [subtab, setSubtab] = React.useState(initialSubtab || 'journey');
+  // A case is not a place you navigate to — it is what you get when you
+  // click a patient, a lab item, a follow-up or a lapsed record. So it
+  // opens over whichever list you were reading, and Back returns you there.
+  const [openCaseId, setOpenCaseId] = React.useState(null);
+  const caseCtx = {
+    appointments: appointments,
+    procedureState: procedureState || {},
+    closedCases: closedCases || {},
+    labReceived: labReceived
+  };
+
+  // Before / Procedure / After / Closure, for the visit happening today.
+  // With nobody booked in there is no visit to report on, and saying so is
+  // more honest than showing four "pending" rows.
+  function visitStatus(thread) {
+    const appt = thread.today;
+    if (!appt) return null;
+    const before = window.KuBi.treatmentReadyStats(appt.procedureType, (treatmentChecked || {})[appt.id] || {});
+    const proc = (procedureState || {})[appt.id] || {};
+    const gate = window.KuBi.closureGate(appt.procedureType, (treatmentCheckedAfter || {})[appt.id] || {});
+    return {
+      before: before.ready ? t('case.complete', lang) : before.done + ' / ' + (before.done + before.missing.length),
+      beforeOk: before.ready,
+      procedure: proc.completedAt ? t('case.complete', lang) : proc.startedAt ? t('case.inProgress', lang) : t('case.pending', lang),
+      procedureOk: !!proc.completedAt,
+      after: gate.canClose ? t('case.complete', lang) : t('case.pending', lang),
+      afterOk: gate.canClose
+    };
+  }
+  function CaseView({
+    caseId
+  }) {
+    const thread = window.KuBi.caseThread(caseId, caseCtx);
+    if (!thread) return /*#__PURE__*/React.createElement("div", {
+      className: "card"
+    }, /*#__PURE__*/React.createElement("p", {
+      className: "module-sub"
+    }, t('case.noCase', lang)));
+    const vs = visitStatus(thread);
+    const cl = thread.closure;
+    const row = function (label, value, tone) {
+      return /*#__PURE__*/React.createElement("div", {
+        className: "case-status-row"
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "case-status-label"
+      }, label), /*#__PURE__*/React.createElement("span", {
+        className: 'case-status-value' + (tone ? ' case-status-' + tone : '')
+      }, value));
+    };
+    return /*#__PURE__*/React.createElement("div", {
+      className: "card case-view"
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "rowbtn case-back",
+      onClick: function () {
+        setOpenCaseId(null);
+      }
+    }, "\u2190 ", t('case.back', lang)), /*#__PURE__*/React.createElement("div", {
+      className: "case-patient"
+    }, thread.patient), /*#__PURE__*/React.createElement("div", {
+      className: "case-eyebrow"
+    }, t('case.active', lang)), /*#__PURE__*/React.createElement("div", {
+      className: "case-treatment"
+    }, thread.treatment), thread.diagnosis ? /*#__PURE__*/React.createElement("div", {
+      className: "case-diagnosis"
+    }, t('case.diagnosis', lang), ": ", thread.diagnosis) : null, /*#__PURE__*/React.createElement("div", {
+      className: "case-nownext"
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+      className: "case-status-label"
+    }, t('case.current', lang)), /*#__PURE__*/React.createElement("span", {
+      className: "case-stage-now"
+    }, thread.progress.current || '—')), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+      className: "case-status-label"
+    }, t('case.next', lang)), /*#__PURE__*/React.createElement("span", {
+      className: "case-stage-next"
+    }, thread.progress.next || '—'))), /*#__PURE__*/React.createElement("div", {
+      className: "case-status-label case-visits-label"
+    }, t('case.visits', lang), " ", thread.progress.visitsDone, " / ", thread.progress.visitsTotal), /*#__PURE__*/React.createElement("ul", {
+      className: "case-visit-list"
+    }, thread.progress.stages.map(function (st, i) {
+      return /*#__PURE__*/React.createElement("li", {
+        key: i,
+        className: 'case-visit ' + (st.done ? 'case-visit-done' : st.current ? 'case-visit-now' : 'case-visit-future')
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "case-visit-mark"
+      }, st.done ? '✓' : st.current ? '●' : '○'), /*#__PURE__*/React.createElement("span", {
+        className: "case-visit-name"
+      }, st.name));
+    })), /*#__PURE__*/React.createElement("div", {
+      className: "case-status-row"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "case-status-label"
+    }, t('case.today', lang)), /*#__PURE__*/React.createElement("span", {
+      className: "case-status-value"
+    }, thread.today ? t('checkinStatus.' + thread.today.status, lang) + ' — ' + t('treatmentPrep.chair', lang) + ' ' + thread.today.chair : t('case.notToday', lang))), /*#__PURE__*/React.createElement("div", {
+      className: "case-status-block"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "card-title"
+    }, t('case.status', lang)), vs ? /*#__PURE__*/React.createElement(React.Fragment, null, row(t('case.before', lang), vs.before, vs.beforeOk ? 'good' : 'warn'), row(t('case.procedure', lang), vs.procedure, vs.procedureOk ? 'good' : null), row(t('case.after', lang), vs.after, vs.afterOk ? 'good' : 'warn')) : /*#__PURE__*/React.createElement("p", {
+      className: "module-sub"
+    }, t('case.notApplicable', lang)), row(t('case.closure', lang), cl.caseClosed ? t('case.closed', lang) : t('case.notYet', lang), cl.caseClosed ? 'good' : null)), /*#__PURE__*/React.createElement("div", {
+      className: "case-status-block"
+    }, row(t('case.lab', lang), thread.lab.length ? thread.lab.map(function (l) {
+      return (l.item[lang] || l.item.en) + ' — ' + (l.received ? t('lab.received', lang) : window.KuBi.labIsLate(l) ? t('lab.late', lang) : t('lab.awaited', lang));
+    }).join(', ') : t('case.none', lang), thread.lab.some(function (l) {
+      return window.KuBi.labIsLate(l);
+    }) ? 'bad' : null), row(t('case.followUp', lang), cl.followUp ? cl.followUp.reason + ' — ' + cl.followUp.due : t('case.none', lang), cl.followUpDue ? 'bad' : null)));
+  }
   React.useEffect(function () {
     if (initialSubtab) setSubtab(initialSubtab);
   }, [initialSubtab]);
@@ -39977,8 +40217,13 @@ window.KuBi.Patients = function Patients({
     className: "module-head"
   }, /*#__PURE__*/React.createElement("h2", null, t('journey.title', lang)), /*#__PURE__*/React.createElement("p", {
     className: "module-sub"
-  }, t('journey.subtitle', lang))), /*#__PURE__*/React.createElement("div", {
-    className: "view-toggle sub-tab-row"
+  }, t('journey.subtitle', lang))), openCaseId ? /*#__PURE__*/React.createElement(CaseView, {
+    caseId: openCaseId
+  }) : null, /*#__PURE__*/React.createElement("div", {
+    className: "view-toggle sub-tab-row",
+    style: openCaseId ? {
+      display: 'none'
+    } : null
   }, /*#__PURE__*/React.createElement("button", {
     className: 'toggle-btn' + (subtab === 'journey' ? ' toggle-btn-active' : ''),
     onClick: function () {
@@ -40055,7 +40300,12 @@ window.KuBi.Patients = function Patients({
         className: 'fu-row' + (late ? ' fu-overdue' : '')
       }, /*#__PURE__*/React.createElement("span", {
         className: "fu-dot"
-      }, c.received ? '🟢' : late ? '🔴' : '🟡'), /*#__PURE__*/React.createElement("span", {
+      }, c.received ? '🟢' : late ? '🔴' : '🟡'), c.caseId && window.KuBi.caseById(c.caseId) ? /*#__PURE__*/React.createElement("button", {
+        className: "link-btn fu-patient case-link",
+        onClick: function () {
+          setOpenCaseId(c.caseId);
+        }
+      }, c.patient) : /*#__PURE__*/React.createElement("span", {
         className: "fu-patient"
       }, c.patient), /*#__PURE__*/React.createElement("span", {
         className: "fu-reason"
@@ -40084,7 +40334,12 @@ window.KuBi.Patients = function Patients({
       className: 'fu-row' + (window.KuBi.isOverdue(f) ? ' fu-overdue' : '')
     }, /*#__PURE__*/React.createElement("span", {
       className: "fu-dot"
-    }, window.KuBi.isOverdue(f) ? '🔴' : '🟢'), /*#__PURE__*/React.createElement("span", {
+    }, window.KuBi.isOverdue(f) ? '🔴' : '🟢'), f.caseId && window.KuBi.caseById(f.caseId) ? /*#__PURE__*/React.createElement("button", {
+      className: "link-btn fu-patient case-link",
+      onClick: function () {
+        setOpenCaseId(f.caseId);
+      }
+    }, f.patient) : /*#__PURE__*/React.createElement("span", {
       className: "fu-patient"
     }, f.patient), /*#__PURE__*/React.createElement("span", {
       className: "fu-reason"
@@ -40110,7 +40365,12 @@ window.KuBi.Patients = function Patients({
       className: "journey-head"
     }, /*#__PURE__*/React.createElement("span", {
       className: "mono today-home-time-col"
-    }, a.time), /*#__PURE__*/React.createElement("span", {
+    }, a.time), a.caseId && window.KuBi.caseById(a.caseId) ? /*#__PURE__*/React.createElement("button", {
+      className: "link-btn today-home-name case-link",
+      onClick: function () {
+        setOpenCaseId(a.caseId);
+      }
+    }, a.patient) : /*#__PURE__*/React.createElement("span", {
       className: "today-home-name"
     }, a.patient), a.isNew ? /*#__PURE__*/React.createElement("span", {
       className: "new-patient-tag"
@@ -41760,7 +42020,11 @@ function Shell({
         initialApptId: navTarget.apptId,
         initialSubtab: navTarget.subtab,
         labReceived: labReceived,
-        onLabReceived: markLabReceived
+        onLabReceived: markLabReceived,
+        treatmentChecked: treatmentChecked,
+        treatmentCheckedAfter: treatmentCheckedAfter,
+        procedureState: procedureState,
+        closedCases: closedCases
       });
     }
     if (activeArea === 'treatment') {

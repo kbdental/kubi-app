@@ -407,6 +407,10 @@ function Shell({ user, onLogout, lang, setLang, day }) {
           initialSubtab={navTarget.subtab}
           labReceived={labReceived}
           onLabReceived={markLabReceived}
+          treatmentChecked={treatmentChecked}
+          treatmentCheckedAfter={treatmentCheckedAfter}
+          procedureState={procedureState}
+          closedCases={closedCases}
         />
       );
     }

@@ -179,7 +179,12 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   check('Late lab case is flagged', /Late/i.test(text()) && /Vikram Shah/.test(text()));
   const labRows = () => doc().querySelectorAll('.fu-row').length;
   const awaitedBefore = Array.from(doc().querySelectorAll('.fu-row')).filter(r => /Mark received/.test(r.textContent)).length;
-  await step(() => click(Array.from(doc().querySelectorAll('.fu-row')).find(r => /Vikram Shah/.test(r.textContent)).querySelector('button')));
+  // Target the action by its label: the patient name in this row is now a
+  // button too — it opens the case — so "the first button" is ambiguous.
+  await step(() => {
+    const row = Array.from(doc().querySelectorAll('.fu-row')).find(r => /Vikram Shah/.test(r.textContent));
+    click(Array.from(row.querySelectorAll('button')).find(b => /Mark received/i.test(b.textContent)));
+  });
   const awaitedAfter = Array.from(doc().querySelectorAll('.fu-row')).filter(r => /Mark received/.test(r.textContent)).length;
   check('Marking a case received clears it', awaitedAfter === awaitedBefore - 1 && labRows() > 0,
         awaitedBefore + ' -> ' + awaitedAfter + ' awaited');
@@ -190,6 +195,49 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   check('Both kinds of silence are distinguished',
         /Advised, never started/i.test(text()) && /Started, not finished/i.test(text()));
   check('Recently-seen patients are not listed', !/Sunita Rao/.test(text()));
+
+  // 12d. THE CASE VIEW — reached by clicking, never navigated to.
+  await step(() => click(Array.from(doc().querySelectorAll('.sub-tab-row .toggle-btn')).find(b => b.textContent.trim() === 'Today')));
+  await step(() => {}, 200);
+  const patientLink = Array.from(doc().querySelectorAll('.case-link')).find(b => /Arjun Prasad/.test(b.textContent));
+  check('A patient with a case is clickable', !!patientLink);
+  await step(() => click(patientLink));
+  await step(() => {}, 250);
+  check('Clicking a patient opens their case', !!doc().querySelector('.case-view'));
+  const caseText = () => (doc().querySelector('.case-view') || {}).textContent || '';
+  check('The case names the treatment and diagnosis',
+        /Root canal, upper left 6/.test(caseText()) && /Irreversible pulpitis/.test(caseText()));
+  check('The case shows current and next stage',
+        /Cleaning \/ medication/.test(caseText()) && /Obturation/.test(caseText()));
+  check('The case lists every visit',
+        doc().querySelectorAll('.case-visit').length === 4,
+        doc().querySelectorAll('.case-visit').length + ' visits');
+  check('The case marks done, now and future differently',
+        doc().querySelectorAll('.case-visit-done').length === 1 &&
+        doc().querySelectorAll('.case-visit-now').length === 1 &&
+        doc().querySelectorAll('.case-visit-future').length === 2);
+  check('The case reports Before / Procedure / After / Closure',
+        /Before/.test(caseText()) && /Procedure/.test(caseText()) &&
+        /After/.test(caseText()) && /Closure/.test(caseText()));
+  check('A half-finished case does not read as closed', /Not yet/.test(caseText()));
+  await step(() => click(doc().querySelector('.case-back')));
+  await step(() => {}, 200);
+  check('...and the case view closes', !doc().querySelector('.case-view'));
+
+  // The case nobody is booked in for — the one V1 could not show at all.
+  await step(() => click(Array.from(doc().querySelectorAll('.sub-tab-row .toggle-btn')).find(b => b.textContent.trim() === 'Follow-up')));
+  await step(() => {}, 200);
+  const fuLink = Array.from(doc().querySelectorAll('.case-link')).find(b => /Vikram Shah/.test(b.textContent));
+  check('A follow-up opens the case it belongs to', !!fuLink);
+  await step(() => click(fuLink));
+  await step(() => {}, 250);
+  check('A case with no appointment today still opens', !!doc().querySelector('.case-view'));
+  check('...and says so rather than showing an empty visit',
+        /Not booked in today/i.test(caseText()) && /No visit today/i.test(caseText()));
+  check('...and still reports its lab and follow-up',
+        /Crown/.test(caseText()) && /Crown fitting/.test(caseText()));
+  await step(() => click(doc().querySelector('.case-back')));
+  await step(() => {}, 200);
 
   // 13. TREATMENT — before checklist
   await step(() => click(navByText(/Treatment/)));

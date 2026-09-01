@@ -624,6 +624,39 @@
   .today-greeting { color: var(--ink-soft); font-size: 14px; margin: 2px 0 0; }
   .now-next-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; opacity: 0.75; }
 
+  /* ---------- Case view ---------- */
+  .case-view { padding: 20px; }
+  .case-back { margin-bottom: 16px; }
+  .case-patient { font-family: var(--font-display); font-size: 24px; letter-spacing: -0.01em; }
+  .case-eyebrow {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--ink-soft); margin-top: 6px;
+  }
+  .case-treatment { font-size: 17px; font-weight: 600; margin-top: 2px; }
+  .case-diagnosis { font-size: 13px; color: var(--ink-soft); margin-top: 4px; }
+  .case-nownext { display: flex; gap: 32px; flex-wrap: wrap; margin: 18px 0 4px; }
+  .case-nownext > div { display: flex; flex-direction: column; gap: 3px; }
+  .case-stage-now { font-size: 16px; font-weight: 650; }
+  .case-stage-next { font-size: 16px; color: var(--ink-soft); }
+  .case-visits-label { display: block; margin-top: 18px; }
+  .case-visit-list { list-style: none; margin: 8px 0 0; padding: 0; }
+  .case-visit { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 14px; }
+  .case-visit-mark { width: 16px; text-align: center; }
+  .case-visit-done .case-visit-name { color: var(--ink-soft); }
+  .case-visit-now .case-visit-name { font-weight: 650; }
+  .case-visit-future .case-visit-name { color: var(--ink-faint, #8593a0); }
+  .case-status-block { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .case-status-row { display: flex; justify-content: space-between; gap: 16px; padding: 5px 0; font-size: 14px; }
+  .case-status-label {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .case-status-value { text-align: right; }
+  .case-status-good { color: var(--green); font-weight: 600; }
+  .case-status-warn { color: var(--ink-soft); }
+  .case-status-bad { color: var(--coral); font-weight: 600; }
+  .case-link { font-weight: 600; text-align: left; }
+
   /* ---------- Repairs ---------- */
   .repair-card { margin-bottom: 16px; }
   .repair-count {

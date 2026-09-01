@@ -13,7 +13,7 @@ React is bundled in.
 ```bash
 npm install
 npm run build     # compiles src/ -> KuBi.html
-npm test          # builds, then runs 150 journey checks + 7 bundle checks
+npm test          # builds, then runs 163 journey checks + 7 bundle checks
 ```
 
 `KuBi.html` is generated. Edit `src/`, never the bundle.
@@ -87,7 +87,11 @@ One place per fact, so nothing can disagree:
   live state staff change and the state that persists
 - whether today's visit is written up — `closedCases`, as before
 
-`caseThread(caseId, ctx)` assembles them. Three states V1 collapsed into one
+`caseThread(caseId, ctx)` assembles them, and the case VIEW renders it —
+patient, treatment, diagnosis, current and next stage, every visit, today's
+status, then Before / Procedure / After / Closure, lab and follow-up. It
+opens over whichever list you were reading and Back returns you there,
+because a case is something you click, not somewhere you go. Three states V1 collapsed into one
 are now distinct: **treatment done** (today's procedure finished), **visit
 documented** (V1's "case closed"), and **case closed** (every stage done and
 the last visit written up). A documented visit on a four-stage RCT does not

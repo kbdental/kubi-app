@@ -65,6 +65,11 @@ window.KuBi.ESCALATION = {
     { after: 1440, role: 'clinic_manager' },      // still not here the next day
     { after: 4320, role: 'owner_admin' },         // three days
   ],
+  followUpDue: [
+    { after: 0, role: 'front_desk_receptionist' },
+    { after: 1440, role: 'clinic_manager' },      // still not called the next day
+    { after: 5760, role: 'lead_dentist' },        // four days: this is now clinical
+  ],
   repairOpen: [
     { after: 0, role: 'clinic_manager' },
     { after: 4320, role: 'owner_admin' },

@@ -813,7 +813,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 01 Sept 2026, 04:13 pm';
+  window.KuBi.BUILD_STAMP = 'Build: 01 Sept 2026, 04:20 pm';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -34464,6 +34464,10 @@ window.KuBi.STRINGS = {
     en: 'lab work is late',
     hi: 'लैब का काम देर से है'
   },
+  'attention.followUpDue': {
+    en: 'is due back',
+    hi: 'को वापस आना है'
+  },
   'followup.contacted': {
     en: 'Called',
     hi: 'कॉल किया'
@@ -36888,6 +36892,20 @@ window.KuBi.isOverdue = function (f) {
   return f.due < window.KuBi.operatingDate();
 };
 
+// Due means today or already past. "Overdue" alone would have let a
+// follow-up sit unmentioned all the way through the day it was due for,
+// and only start being a problem tomorrow.
+window.KuBi.followUpIsDue = function (f) {
+  return !!(f && f.due && f.due <= window.KuBi.operatingDate());
+};
+
+/** Follow-ups that need doing now, soonest first. */
+window.KuBi.followUpsDue = function () {
+  return (window.KuBi.FOLLOW_UPS || []).filter(window.KuBi.followUpIsDue).sort(function (a, b) {
+    return String(a.due).localeCompare(String(b.due));
+  });
+};
+
 // ---- Patients who stopped coming --------------------------------------
 // Two different silences, and the clinic answers them differently:
 //
@@ -37205,6 +37223,19 @@ window.KuBi.ESCALATION = {
     role: 'owner_admin'
   } // three days
   ],
+  followUpDue: [{
+    after: 0,
+    role: 'front_desk_receptionist'
+  }, {
+    after: 1440,
+    role: 'clinic_manager'
+  },
+  // still not called the next day
+  {
+    after: 5760,
+    role: 'lead_dentist'
+  } // four days: this is now clinical
+  ],
   repairOpen: [{
     after: 0,
     role: 'clinic_manager'
@@ -37296,6 +37327,7 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
     caseNotClosed: 'lead_dentist',
     repairOpen: 'clinic_manager',
     labLate: 'front_desk_receptionist',
+    followUpDue: 'front_desk_receptionist',
     equipmentDown: 'lead_dental_assistant'
   };
 
@@ -37396,6 +37428,34 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
     }
   });
 
+  // ---- PATIENTS: due back, and not here -------------------------------
+  // The loop the blueprint asks for: a case closes, a follow-up falls due,
+  // and it has to surface somewhere the clinic actually looks.
+  //
+  // Not raised when the patient is already booked in today: they are back,
+  // which is the follow-up being answered rather than ignored. Chasing
+  // somebody who is sitting in the waiting room is how a list stops being
+  // believed.
+  const bookedToday = {};
+  (appointments || []).forEach(function (a) {
+    bookedToday[a.patient] = true;
+  });
+  window.KuBi.followUpsDue().forEach(function (f) {
+    if (bookedToday[f.patient]) return;
+    items.push({
+      id: 'followup-' + f.id,
+      area: 'patients',
+      subtab: 'followup',
+      kind: 'followUpDue',
+      patient: f.patient,
+      reason: f.reason,
+      due: f.due,
+      caseId: f.caseId || null,
+      owner: OWNER.followUpDue,
+      raisedAt: new Date(f.due + 'T09:00:00')
+    });
+  });
+
   // ---- CLINIC: equipment that is not working ---------------------------
   // Every open fault, whether or not it is what the NOW card is showing.
   // The card names the one thing to do next; this is the list of what is
@@ -37462,13 +37522,25 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
   // it NOW rather than who it started with, so every screen that already
   // prints the owner shows the escalation without needing to know about
   // it. The original is kept as raisedOwner for anyone who needs it.
-  return items.map(function (it) {
+  const withEscalation = items.map(function (it) {
     const esc = window.KuBi.exceptionEscalation(it, now);
     return Object.assign({}, it, {
       raisedOwner: it.owner,
       owner: esc.owner || it.owner,
       escalation: esc
     });
+  });
+
+  // Worst first, and "worst" now means something: how far a problem has
+  // escalated, then how long it has been open. Insertion order used to
+  // decide this, which put four room checklists raised a minute ago above
+  // a follow-up four days overdue — and since only five are shown, the
+  // follow-up was never seen. The list is capped for display, so what
+  // sits at the top is the whole question.
+  return withEscalation.sort(function (a, b) {
+    const levelDiff = (b.escalation.level || 0) - (a.escalation.level || 0);
+    if (levelDiff) return levelDiff;
+    return (b.escalation.ageMinutes || 0) - (a.escalation.ageMinutes || 0);
   });
 };
 
@@ -38493,7 +38565,7 @@ window.KuBi.caseClosure = function (caseId, ctx) {
     // visit was written up.
     caseClosed: progress.allStagesDone && (!appt || visitDocumented),
     followUp: followUp,
-    followUpDue: !!(followUp && window.KuBi.isOverdue(followUp))
+    followUpDue: window.KuBi.followUpIsDue(followUp)
   };
 };
 
@@ -38589,6 +38661,27 @@ window.KuBi.caseTimeline = function (caseId, ctx) {
 };
 
 /**
+ * Where the case stands, as one answer. The blueprint asks KuBi to stop
+ * confusing three different endings, and this is the order they happen in:
+ *
+ *   inTreatment    stages remain
+ *   treatmentDone  today's procedure is finished, the visit is not written up
+ *   closed         every stage done and written up, nothing outstanding
+ *   followUpDue    closed, and the patient is due back — the loop
+ *   complete       closed, with a follow-up booked for later
+ *
+ * A follow-up that is due on an OPEN case does not make the case
+ * followUpDue: the case has not finished, so the follow-up is part of the
+ * treatment rather than the tail of it.
+ */
+window.KuBi.caseState = function (caseId, ctx) {
+  const cl = window.KuBi.caseClosure(caseId, ctx);
+  if (!cl.caseClosed) return cl.treatmentDone && !cl.visitDocumented ? 'treatmentDone' : 'inTreatment';
+  if (cl.followUpDue) return 'followUpDue';
+  return cl.followUp ? 'complete' : 'closed';
+};
+
+/**
  * The whole thread, assembled: Patient → Case → Stage → Visit → Closure.
  * One call, so a screen never has to gather this itself and no two screens
  * can gather it differently.
@@ -38609,7 +38702,8 @@ window.KuBi.caseThread = function (caseId, ctx) {
     progress: window.KuBi.caseProgress(caseId, context.appointments, context.lang),
     lab: window.KuBi.caseLab(caseId, context.labReceived),
     timeline: window.KuBi.caseTimeline(caseId, context),
-    closure: window.KuBi.caseClosure(caseId, context)
+    closure: window.KuBi.caseClosure(caseId, context),
+    state: window.KuBi.caseState(caseId, context)
   };
 };
 
@@ -39903,6 +39997,7 @@ window.KuBi.Today = function Today({
     if (item.kind === 'caseNotClosed') return item.patient + ' — ' + t('attention.caseNotClosed', lang);
     if (item.kind === 'repairOpen') return item.what + ' — ' + t('attention.repairOpen', lang) + ' (' + item.days + ' ' + t('repair.days', lang) + ')';
     if (item.kind === 'labLate') return item.patient + ' — ' + (item.item[lang] || item.item.en) + ' ' + t('attention.labLate', lang);
+    if (item.kind === 'followUpDue') return item.patient + ' — ' + t('attention.followUpDue', lang) + ' (' + item.reason + ')';
     if (item.kind === 'equipmentDown') {
       const nm = item.equipItem ? item.equipItem.isChair ? t('clinic.room', lang) + ' ' + item.equipItem.room : item.equipItem.name[lang] || item.equipItem.name.en : '';
       return nm + ' — ' + t('now.equipmentDown', lang) + (item.note ? ': ' + item.note : '');
@@ -42156,6 +42251,7 @@ window.KuBi.Management = function Management({
     if (item.kind === 'caseNotClosed') return item.patient + ' — ' + t('attention.caseNotClosed', lang);
     if (item.kind === 'repairOpen') return item.what + ' — ' + t('attention.repairOpen', lang) + ' (' + item.days + ' ' + t('repair.days', lang) + ')';
     if (item.kind === 'labLate') return item.patient + ' — ' + (item.item[lang] || item.item.en) + ' ' + t('attention.labLate', lang);
+    if (item.kind === 'followUpDue') return item.patient + ' — ' + t('attention.followUpDue', lang) + ' (' + item.reason + ')';
     if (item.kind === 'equipmentDown') {
       const nm = item.equipItem ? item.equipItem.isChair ? t('clinic.room', lang) + ' ' + item.equipItem.room : item.equipItem.name[lang] || item.equipItem.name.en : '';
       return nm + ' — ' + t('now.equipmentDown', lang) + (item.note ? ': ' + item.note : '');

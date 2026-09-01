@@ -31,6 +31,7 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
     caseNotClosed: 'lead_dentist',
     repairOpen: 'clinic_manager',
     labLate: 'front_desk_receptionist',
+    followUpDue: 'front_desk_receptionist',
     equipmentDown: 'lead_dental_assistant',
   };
 
@@ -92,6 +93,27 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
     }
   });
 
+  // ---- PATIENTS: due back, and not here -------------------------------
+  // The loop the blueprint asks for: a case closes, a follow-up falls due,
+  // and it has to surface somewhere the clinic actually looks.
+  //
+  // Not raised when the patient is already booked in today: they are back,
+  // which is the follow-up being answered rather than ignored. Chasing
+  // somebody who is sitting in the waiting room is how a list stops being
+  // believed.
+  const bookedToday = {};
+  (appointments || []).forEach(function (a) { bookedToday[a.patient] = true; });
+  window.KuBi.followUpsDue().forEach(function (f) {
+    if (bookedToday[f.patient]) return;
+    items.push({
+      id: 'followup-' + f.id, area: 'patients', subtab: 'followup',
+      kind: 'followUpDue', patient: f.patient, reason: f.reason, due: f.due,
+      caseId: f.caseId || null,
+      owner: OWNER.followUpDue,
+      raisedAt: new Date(f.due + 'T09:00:00'),
+    });
+  });
+
   // ---- CLINIC: equipment that is not working ---------------------------
   // Every open fault, whether or not it is what the NOW card is showing.
   // The card names the one thing to do next; this is the list of what is
@@ -143,12 +165,24 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
   // it NOW rather than who it started with, so every screen that already
   // prints the owner shows the escalation without needing to know about
   // it. The original is kept as raisedOwner for anyone who needs it.
-  return items.map(function (it) {
+  const withEscalation = items.map(function (it) {
     const esc = window.KuBi.exceptionEscalation(it, now);
     return Object.assign({}, it, {
       raisedOwner: it.owner,
       owner: esc.owner || it.owner,
       escalation: esc,
     });
+  });
+
+  // Worst first, and "worst" now means something: how far a problem has
+  // escalated, then how long it has been open. Insertion order used to
+  // decide this, which put four room checklists raised a minute ago above
+  // a follow-up four days overdue — and since only five are shown, the
+  // follow-up was never seen. The list is capped for display, so what
+  // sits at the top is the whole question.
+  return withEscalation.sort(function (a, b) {
+    const levelDiff = (b.escalation.level || 0) - (a.escalation.level || 0);
+    if (levelDiff) return levelDiff;
+    return (b.escalation.ageMinutes || 0) - (a.escalation.ageMinutes || 0);
   });
 };

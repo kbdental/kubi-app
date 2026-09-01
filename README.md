@@ -13,7 +13,7 @@ React is bundled in.
 ```bash
 npm install
 npm run build     # compiles src/ -> KuBi.html
-npm test          # builds, then runs 207 journey checks + 7 bundle checks
+npm test          # builds, then runs 221 journey checks + 7 bundle checks
 ```
 
 `KuBi.html` is generated. Edit `src/`, never the bundle.
@@ -167,6 +167,35 @@ Three states, kept distinct because they need different actions:
 `labReceived` is keyed by the lab item. A stored day written before this
 change carries the old appointment keys; they are simply ignored, and the
 item shows as awaited until ticked again.
+
+## Follow-up
+
+    Case closed → follow-up due → appears in Today
+
+Follow-ups existed but lived only inside the Patients tab, so one due today
+and one four days overdue were visible nowhere the clinic actually looks.
+A due follow-up is now an exception like any other: owned, aged, escalating.
+
+**Due means today or past.** "Overdue" alone let a follow-up sit unmentioned
+all the way through the day it was due for, and only become a problem the
+next morning.
+
+**Somebody already booked in today is not chased.** They are back — that is
+the follow-up being answered, not ignored. Chasing a patient who is sitting
+in the waiting room is how a list stops being believed.
+
+`caseState()` gives the endings the blueprint asked KuBi to stop confusing:
+`inTreatment` → `treatmentDone` (procedure finished, visit not written up) →
+`closed` / `complete` → `followUpDue`. A follow-up due on an OPEN case does
+not make the case followUpDue: the case has not finished, so the follow-up
+is part of the treatment rather than the tail of it.
+
+### Ordering
+
+The attention list is sorted worst-first — how far a problem has escalated,
+then how long it has been open. Only five are shown, so what sits at the top
+is the whole question. Insertion order used to decide it, which put four
+room checklists raised a minute ago above a follow-up four days overdue.
 
 ## Exceptions and escalation
 

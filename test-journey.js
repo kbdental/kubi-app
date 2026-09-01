@@ -999,6 +999,77 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
         K.labCases({}).filter(l => l.received).every(l => !!l.receivedOn),
         K.labCases({}).filter(l => l.received).length + ' received');
 
+  // 36. FOLLOW-UP — case closed, follow-up due, and it turns up in Today.
+  //     Follow-ups existed but lived only inside the Patients tab: one due
+  //     TODAY and one four days OVERDUE were visible nowhere the clinic
+  //     actually looks.
+  check('Due means today or past, not just past',
+        K.followUpIsDue({ due: K.operatingDate() }) === true &&
+        K.followUpIsDue({ due: K.operatingDate(new Date(Date.now() - 86400000)) }) === true &&
+        K.followUpIsDue({ due: K.operatingDate(new Date(Date.now() + 86400000)) }) === false);
+
+  const fuOpen = { open: true, by: 'X', at: new Date() };
+  const fuItems = nobody => K.computeAttentionItems(nobody, {}, {}, fuOpen, {}, {}, {}, [], {}, {})
+                             .filter(i => i.kind === 'followUpDue');
+  const raised = fuItems([]);
+  check('A due follow-up reaches the attention list', raised.length > 0, raised.length + ' due');
+  check('It names the patient and why', raised.every(i => !!i.patient && !!i.reason));
+  check('It is owned, and escalates like anything else',
+        raised.every(i => !!i.owner && !!i.escalation),
+        raised.map(i => i.patient + ': ' + i.owner).join(', '));
+  check('A follow-up four days late has escalated',
+        raised.some(i => i.escalation.escalated === true));
+
+  // The loop closing: the patient came back, so stop chasing them.
+  const backToday = [{ id: 'B1', patient: raised[0].patient, chair: 1, status: 'arrived',
+                       procedureType: 'Consultation', time: '09:00', statusAt: new Date() }];
+  check('Somebody already booked in today is not chased',
+        !fuItems(backToday).some(i => i.patient === raised[0].patient),
+        raised[0].patient + ' is back');
+  check('...but everybody else still is', fuItems(backToday).length === raised.length - 1);
+
+  // The case knows which of the three endings it is at.
+  const stCtx = { appointments: [], procedureState: {}, closedCases: {}, labReceived: {} };
+  check('An unfinished case is in treatment',
+        K.caseState('AP0311-RCT_MOLAR-01', stCtx) === 'inTreatment',
+        K.caseState('AP0311-RCT_MOLAR-01', stCtx));
+  const oneStage = [{ id: 'S1', patient: 'Kabir Singh', chair: 3, status: 'done', procedureType: 'Scaling',
+                      time: '10:45', caseId: 'KS0502-SCALING-01',
+                      caseStages: [{ name: 'Scaling + polishing', done: true }] }];
+  check('Treatment finished but not written up is its own state',
+        K.caseState('KS0502-SCALING-01',
+          { appointments: oneStage, procedureState: { S1: { completedAt: new Date() } }, closedCases: {} })
+          === 'treatmentDone');
+  check('A closed case with nothing outstanding is closed',
+        K.caseState('KS0502-SCALING-01',
+          { appointments: oneStage, procedureState: { S1: { completedAt: new Date() } },
+            closedCases: { S1: true } }) === 'closed');
+
+  // A follow-up due on an OPEN case is part of the treatment, not its tail.
+  check('A due follow-up does not by itself end a case',
+        K.caseState('VS0221-CROWN_SINGLE-01', stCtx) === 'inTreatment',
+        'Vikram is overdue a follow-up but his crown case is still open');
+
+  // 37. THE ATTENTION LIST IS ORDERED BY HOW BAD IT HAS GOT.
+  //     Only five are shown, so what sits at the top is the whole question.
+  //     Insertion order used to decide it, which put four room checklists
+  //     raised a minute ago above a follow-up four days overdue.
+  const ordOpen = { open: true, by: 'X', at: new Date() };
+  const ordered = K.computeAttentionItems([], {}, {}, ordOpen, {}, {}, {},
+                                          K.REPAIRS_SEED, {}, K.EQUIPMENT_STATUS_SEED);
+  check('Worst first, by how far it has escalated',
+        ordered.every((it, i) => i === 0 ||
+          ordered[i - 1].escalation.level > it.escalation.level ||
+          (ordered[i - 1].escalation.level === it.escalation.level &&
+           ordered[i - 1].escalation.ageMinutes >= it.escalation.ageMinutes)),
+        ordered.slice(0, 3).map(i => i.kind + ' L' + i.escalation.level).join(' > '));
+  check('An escalated item outranks a fresh one',
+        ordered[0].escalation.level > 0 || ordered.every(i => i.escalation.level === 0),
+        'top: ' + ordered[0].kind + ' (level ' + ordered[0].escalation.level + ')');
+  // Rooms raised the moment the clinic opened must not crowd out the rest.
+  const firstFive = ordered.slice(0, 5).map(i => i.kind);
+  check('The top five are not all one kind', new Set(firstFive).size > 1, firstFive.join(', '));
+
   // SUMMARY
   await step(() => {}, 150);
   const failed = results.filter(r => !r.pass);

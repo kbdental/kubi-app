@@ -111,6 +111,20 @@ window.KuBi.isOverdue = function (f) {
   return f.due < window.KuBi.operatingDate();
 };
 
+// Due means today or already past. "Overdue" alone would have let a
+// follow-up sit unmentioned all the way through the day it was due for,
+// and only start being a problem tomorrow.
+window.KuBi.followUpIsDue = function (f) {
+  return !!(f && f.due && f.due <= window.KuBi.operatingDate());
+};
+
+/** Follow-ups that need doing now, soonest first. */
+window.KuBi.followUpsDue = function () {
+  return (window.KuBi.FOLLOW_UPS || [])
+    .filter(window.KuBi.followUpIsDue)
+    .sort(function (a, b) { return String(a.due).localeCompare(String(b.due)); });
+};
+
 // ---- Patients who stopped coming --------------------------------------
 // Two different silences, and the clinic answers them differently:
 //

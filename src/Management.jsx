@@ -81,6 +81,7 @@ window.KuBi.Management = function Management({ lang, appointments, treatmentChec
     if (item.kind === 'caseNotClosed') return item.patient + ' — ' + t('attention.caseNotClosed', lang);
     if (item.kind === 'repairOpen') return item.what + ' — ' + t('attention.repairOpen', lang) + ' (' + item.days + ' ' + t('repair.days', lang) + ')';
     if (item.kind === 'labLate') return item.patient + ' — ' + (item.item[lang] || item.item.en) + ' ' + t('attention.labLate', lang);
+    if (item.kind === 'followUpDue') return item.patient + ' — ' + t('attention.followUpDue', lang) + ' (' + item.reason + ')';
     if (item.kind === 'equipmentDown') {
       const nm = item.equipItem
         ? (item.equipItem.isChair ? t('clinic.room', lang) + ' ' + item.equipItem.room

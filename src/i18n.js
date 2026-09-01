@@ -90,6 +90,7 @@ window.KuBi.STRINGS = {
   'lab.markReceived': { en: 'Mark received', hi: 'आ गया — दर्ज करें' },
   'lab.pendingCount': { en: 'awaited', hi: 'बाकी' },
   'attention.labLate': { en: 'lab work is late', hi: 'लैब का काम देर से है' },
+  'attention.followUpDue': { en: 'is due back', hi: 'को वापस आना है' },
   'followup.contacted': { en: 'Called', hi: 'कॉल किया' },
   'today.stillToDo': { en: 'still to do before closing', hi: 'बंद करने से पहले बाकी हैं' },
   'now.clinicClosed': { en: 'The clinic isn\u2019t open yet', hi: 'क्लिनिक अभी खुला नहीं है' },

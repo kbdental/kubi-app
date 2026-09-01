@@ -249,7 +249,7 @@ window.KuBi.caseClosure = function (caseId, ctx) {
     // visit was written up.
     caseClosed: progress.allStagesDone && (!appt || visitDocumented),
     followUp: followUp,
-    followUpDue: !!(followUp && window.KuBi.isOverdue(followUp)),
+    followUpDue: window.KuBi.followUpIsDue(followUp),
   };
 };
 
@@ -309,6 +309,27 @@ window.KuBi.caseTimeline = function (caseId, ctx) {
 };
 
 /**
+ * Where the case stands, as one answer. The blueprint asks KuBi to stop
+ * confusing three different endings, and this is the order they happen in:
+ *
+ *   inTreatment    stages remain
+ *   treatmentDone  today's procedure is finished, the visit is not written up
+ *   closed         every stage done and written up, nothing outstanding
+ *   followUpDue    closed, and the patient is due back — the loop
+ *   complete       closed, with a follow-up booked for later
+ *
+ * A follow-up that is due on an OPEN case does not make the case
+ * followUpDue: the case has not finished, so the follow-up is part of the
+ * treatment rather than the tail of it.
+ */
+window.KuBi.caseState = function (caseId, ctx) {
+  const cl = window.KuBi.caseClosure(caseId, ctx);
+  if (!cl.caseClosed) return cl.treatmentDone && !cl.visitDocumented ? 'treatmentDone' : 'inTreatment';
+  if (cl.followUpDue) return 'followUpDue';
+  return cl.followUp ? 'complete' : 'closed';
+};
+
+/**
  * The whole thread, assembled: Patient → Case → Stage → Visit → Closure.
  * One call, so a screen never has to gather this itself and no two screens
  * can gather it differently.
@@ -329,6 +350,7 @@ window.KuBi.caseThread = function (caseId, ctx) {
     lab: window.KuBi.caseLab(caseId, context.labReceived),
     timeline: window.KuBi.caseTimeline(caseId, context),
     closure: window.KuBi.caseClosure(caseId, context),
+    state: window.KuBi.caseState(caseId, context),
   };
 };
 

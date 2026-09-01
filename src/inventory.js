@@ -25,15 +25,79 @@ function s(en, hi) { return { en: en, hi: hi }; }
 window.KuBi.MATERIALS = [
   { id: 'gutta_percha',  name: s('Gutta percha', 'गटा परचा'),                    qty: 6,   min: 10, unit: 'packs' },
   { id: 'endo_files',    name: s('Endodontic files', 'एंडो फाइल्स'),             qty: 40,  min: 12, unit: 'sets' },
-  { id: 'anaesthetic',   name: s('Anaesthetic cartridges', 'एनेस्थीसिया कार्ट्रिज'), qty: 120, min: 40, unit: 'cartridges' },
-  { id: 'composite',     name: s('Composite material', 'कंपोजिट मटीरियल'),       qty: 25,  min: 8,  unit: 'syringes' },
+  { id: 'anaesthetic',   name: s('Anaesthetic cartridges', 'एनेस्थीसिया कार्ट्रिज'), min: 40, unit: 'cartridges',
+    batches: [{ id: 'AN-2431', qty: 90, expires: _labDay(120) },
+               { id: 'AN-2298', qty: 30, expires: _labDay(9) }] },
+  { id: 'composite',     name: s('Composite material', 'कंपोजिट मटीरियल'),       min: 8,  unit: 'syringes',
+    batches: [{ id: 'CO-1180', qty: 25, expires: _labDay(240) }] },
   { id: 'impression',    name: s('Impression material', 'इम्प्रेशन मटीरियल'),     qty: 18,  min: 6,  unit: 'packs' },
-  { id: 'cement',        name: s('Luting cement', 'ल्यूटिंग सीमेंट'),             qty: 14,  min: 5,  unit: 'packs' },
+  { id: 'cement',        name: s('Luting cement', 'ल्यूटिंग सीमेंट'),             min: 5,  unit: 'packs',
+    // Six of these are already past their date, so only 8 are stock.
+    batches: [{ id: 'CE-0912', qty: 8, expires: _labDay(75) },
+               { id: 'CE-0844', qty: 6, expires: _labDay(-4) }] },
   { id: 'implant_comp',  name: s('Implant components', 'इम्प्लांट कंपोनेंट'),      qty: 9,   min: 4,  unit: 'sets' },
   { id: 'sutures',       name: s('Sutures', 'टांके'),                            qty: 30,  min: 10, unit: 'packs' },
   { id: 'gauze',         name: s('Gauze', 'गॉज़'),                               qty: 8,   min: 12, unit: 'packs' },
   { id: 'gloves',        name: s('Gloves', 'ग्लव्स'),                            qty: 400, min: 100, unit: 'pairs' },
 ];
+
+// ---- expiry ------------------------------------------------------------
+//
+// A HONEST NOTE ON THE V2 PRINCIPLE.
+// Everything else in V2 is worked out from what staff already record.
+// Expiry cannot be: no fact already in KuBi implies the date printed on a
+// box. It is the one thing here that needs an entry.
+//
+// So it asks for the least possible, at the only moment somebody is
+// already holding the box: when stock arrives. One date per delivery.
+// After that KuBi does the rest — expired stock stops counting as stock,
+// which feeds the same READY / LOW / NOT AVAILABLE the clinic already
+// reads, and the reorder list, with nothing further asked of anybody.
+//
+// Materials with no batches keep working exactly as before. Expiry is
+// opt-in per material, because gloves and gauze do not need it and asking
+// would be the very thing this principle forbids.
+
+/** Has this batch passed its date? */
+window.KuBi.batchExpired = function (batch, today) {
+  if (!batch || !batch.expires) return false;
+  return batch.expires < (today || window.KuBi.operatingDate());
+};
+
+/** Days until it expires — negative once it has. */
+window.KuBi.batchDaysLeft = function (batch, today) {
+  if (!batch || !batch.expires) return null;
+  const from = new Date((today || window.KuBi.operatingDate()) + 'T00:00:00').getTime();
+  const to = new Date(batch.expires + 'T00:00:00').getTime();
+  return Math.round((to - from) / 86400000);
+};
+
+/**
+ * What can actually be used. Expired stock is still on the shelf but it is
+ * not stock, and counting it is how a clinic discovers it has none of
+ * something at the moment it needs it.
+ */
+window.KuBi.usableQty = function (m) {
+  if (!m) return 0;
+  if (!m.batches || !m.batches.length) return typeof m.qty === 'number' ? m.qty : 0;
+  return m.batches.reduce(function (n, b) {
+    return n + (window.KuBi.batchExpired(b) ? 0 : (b.qty || 0));
+  }, 0);
+};
+
+/** Batches expiring within `days`, soonest first. Expired ones included. */
+window.KuBi.expiringSoon = function (days) {
+  const within = typeof days === 'number' ? days : 30;
+  const out = [];
+  (window.KuBi.MATERIALS || []).forEach(function (m) {
+    (m.batches || []).forEach(function (b) {
+      const left = window.KuBi.batchDaysLeft(b);
+      if (left === null || left > within) return;
+      out.push({ material: m, batch: b, daysLeft: left, expired: left < 0 });
+    });
+  });
+  return out.sort(function (a, b) { return a.daysLeft - b.daysLeft; });
+};
 
 /**
  * READY / LOW / NOT AVAILABLE, and nothing more complicated than that.
@@ -41,9 +105,11 @@ window.KuBi.MATERIALS = [
  */
 window.KuBi.materialState = function (m) {
   if (!m) return 'ok';
-  if (typeof m.qty !== 'number') return m.state || 'ok';   // unmeasured stock
-  if (m.qty <= 0) return 'out';
-  if (m.qty <= m.min) return 'low';
+  const batched = !!(m.batches && m.batches.length);
+  if (!batched && typeof m.qty !== 'number') return m.state || 'ok';   // unmeasured
+  const usable = window.KuBi.usableQty(m);
+  if (usable <= 0) return 'out';
+  if (usable <= m.min) return 'low';
   return 'ok';
 };
 
@@ -280,5 +346,6 @@ window.KuBi.supplyOutlook = function (appointmentsToday) {
     tomorrow: problems(window.KuBi.requirementFor(typesTomorrow)),
     week: problems(window.KuBi.requirementFor(typesWeek)),
     reorder: window.KuBi.reorderList(),
+    expiring: window.KuBi.expiringSoon(30),
   };
 };

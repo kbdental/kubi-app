@@ -1040,10 +1040,21 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
         K.caseState('KS0502-SCALING-01',
           { appointments: oneStage, procedureState: { S1: { completedAt: new Date() } }, closedCases: {} })
           === 'treatmentDone');
-  check('A closed case with nothing outstanding is closed',
-        K.caseState('KS0502-SCALING-01',
-          { appointments: oneStage, procedureState: { S1: { completedAt: new Date() } },
-            closedCases: { S1: true } }) === 'closed');
+  // Closing a case now EARNS a follow-up: the procedure says what review it
+  // needs and the closing date is already recorded, so KuBi works it out
+  // rather than asking anybody to book it. A closed scaling case is
+  // therefore 'complete' — closed, with the patient due back later — and
+  // 'closed' is reserved for procedures that need no review at all.
+  const closedScaling = { appointments: oneStage,
+                          procedureState: { S1: { completedAt: new Date() } },
+                          closedCases: { S1: { closedAt: new Date(), closedBy: 'Dr. Ananya Rao' } } };
+  check('A closed case that earns a review is complete, not merely closed',
+        K.caseState('KS0502-SCALING-01', closedScaling) === 'complete',
+        K.caseState('KS0502-SCALING-01', closedScaling));
+  const earned = K.caseClosure('KS0502-SCALING-01', closedScaling).followUp;
+  check('...and KuBi worked out when, without being told',
+        !!earned && earned.derived === true && !!earned.due && !!earned.reason,
+        earned ? earned.reason + ' due ' + earned.due : 'none');
 
   // A follow-up due on an OPEN case is part of the treatment, not its tail.
   check('A due follow-up does not by itself end a case',
@@ -1127,9 +1138,12 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   // 39. INVENTORY INTELLIGENCE — today / tomorrow / minimum / reorder.
   //     Stock used to be a hand-set word with no number behind it, and
   //     KuBi knew nothing about any day but today.
-  check('Stock state is derived from the quantity, not set by hand',
-        (K.MATERIALS || []).every(m => typeof m.qty === 'number' && typeof m.min === 'number'),
-        K.MATERIALS.length + ' materials');
+  // Stock is either a plain quantity or dated batches. Both are numbers
+  // KuBi works from; neither is a state somebody typed.
+  check('Stock state is derived from what is there, not set by hand',
+        (K.MATERIALS || []).every(m => typeof m.min === 'number' &&
+          (typeof m.qty === 'number' || (Array.isArray(m.batches) && m.batches.length))),
+        K.MATERIALS.filter(m => m.batches).length + ' batched of ' + K.MATERIALS.length);
   check('Below the minimum is LOW',
         K.materialState({ qty: 6, min: 10 }) === 'low' &&
         K.materialState({ qty: 10, min: 10 }) === 'low');
@@ -1167,6 +1181,83 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
         !gauzeShort || (K.reorderList().some(m => m.id === 'gauze') &&
                         !outlook.today.some(r => r.material.id === 'gauze')),
         'gauze is short but nothing booked today uses it');
+
+  // 40. EXPIRY — the one thing V2 cannot work out for itself.
+  //     No fact already in KuBi implies the date printed on a box, so it
+  //     is asked for once, when the stock arrives, and nothing further.
+  //     Expired stock then stops counting as stock, which feeds the same
+  //     READY / LOW / NOT AVAILABLE the clinic already reads.
+  const cement = K.materialById('cement');
+  const onShelf = cement.batches.reduce((n, b) => n + b.qty, 0);
+  check('Expired stock is on the shelf but is not stock',
+        K.usableQty(cement) < onShelf,
+        onShelf + ' on the shelf, ' + K.usableQty(cement) + ' usable');
+  check('A batch past its date is expired',
+        K.batchExpired({ expires: K.operatingDate(new Date(Date.now() - 86400000)) }) === true &&
+        K.batchExpired({ expires: K.operatingDate(new Date(Date.now() + 86400000)) }) === false);
+  check('A batch with no date never expires', K.batchExpired({ qty: 5 }) === false);
+
+  // Expiring stock changes availability by itself — nobody re-states it.
+  const allGone = { min: 5, batches: [{ qty: 9, expires: K.operatingDate(new Date(Date.now() - 86400000)) }] };
+  check('Stock that has all expired reads as NOT AVAILABLE',
+        K.materialState(allGone) === 'out', K.usableQty(allGone) + ' usable');
+  const halfGone = { min: 5, batches: [{ qty: 4, expires: K.operatingDate(new Date(Date.now() + 99 * 86400000)) },
+                                       { qty: 40, expires: K.operatingDate(new Date(Date.now() - 86400000)) }] };
+  check('...and stock partly expired can fall to LOW',
+        K.materialState(halfGone) === 'low', K.usableQty(halfGone) + ' usable of 44');
+
+  check('What is expiring is listed soonest first',
+        K.expiringSoon(30).every((e, i, all) => i === 0 || all[i - 1].daysLeft <= e.daysLeft),
+        K.expiringSoon(30).map(e => e.material.name.en + ' ' + e.daysLeft + 'd').join(', '));
+  check('Already-expired is flagged as such',
+        K.expiringSoon(30).filter(e => e.expired).every(e => e.daysLeft < 0));
+  check('A far-off date is not nagged about',
+        K.expiringSoon(30).every(e => e.daysLeft <= 30));
+
+  // Expiry is opt-in: gloves and gauze do not need a date, and asking for
+  // one would be exactly what the V2 principle forbids.
+  check('Materials without batches keep working unchanged',
+        K.materialState(K.materialById('gloves')) === 'ok' &&
+        !K.materialById('gloves').batches);
+  check('Expiry reaches the outlook',
+        Array.isArray(K.supplyOutlook(K.APPOINTMENTS_TODAY).expiring));
+
+  // 41. THE V2 PRINCIPLE, AS A TEST.
+  //     "KuBi V2 should not ask staff to enter more information. It should
+  //     use the information already entered to make the next decision
+  //     easier." One record in, several conclusions out — asserted here so
+  //     the chain cannot quietly break.
+  const chainAppt = K.APPOINTMENTS_TODAY.find(a => a.caseId === 'MR0184-CROWN_SINGLE-01');
+  const chainBase = { appointments: [chainAppt], procedureState: {}, closedCases: {},
+                      treatmentChecked: {}, treatmentCheckedAfter: {}, readinessChecked: {},
+                      clinicStatus: { open: true, by: 'X', at: new Date() }, labReceived: {} };
+
+  // ONE tick: the crown came back.
+  check('Recording a lab receipt is enough to unblock the treatment',
+        K.procedureSupplyStatus('Crown', chainAppt, { L1: false }).ok === false &&
+        K.procedureSupplyStatus('Crown', chainAppt, { L1: true }).ok === true);
+
+  // ONE button: the procedure finished.
+  const procDone = Object.assign({}, chainBase,
+    { procedureState: { A2: { startedAt: new Date(), completedAt: new Date() } } });
+  check('Finishing a procedure is enough to raise the documentation',
+        K.nextAction(procDone).kind === 'needsDocumentation' &&
+        K.caseState('MR0184-CROWN_SINGLE-01', procDone) === 'treatmentDone');
+  check('...and enough to write the timeline',
+        K.caseTimeline('MR0184-CROWN_SINGLE-01', procDone)
+          .filter(e => e.on === K.operatingDate()).length === 2);
+
+  // ONE button: the case closed.
+  const caseShut = Object.assign({}, procDone, {
+    appointments: [Object.assign({}, chainAppt,
+      { caseStages: chainAppt.caseStages.map(st => ({ name: st.name, done: true })) })],
+    closedCases: { A2: { closedAt: new Date(), closedBy: 'Dr. Karan Mehta' } },
+  });
+  const earnedFu = K.caseClosure('MR0184-CROWN_SINGLE-01', caseShut).followUp;
+  check('Closing a case is enough to know when the patient is due back',
+        !!earnedFu && earnedFu.derived === true,
+        earnedFu ? earnedFu.reason + ' due ' + earnedFu.due : 'nothing derived');
+  check('Nobody was asked to book it', !(K.FOLLOW_UPS || []).some(f => f.caseId === 'MR0184-CROWN_SINGLE-01'));
 
   // SUMMARY
   await step(() => {}, 150);

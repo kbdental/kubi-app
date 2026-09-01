@@ -13,7 +13,7 @@ React is bundled in.
 ```bash
 npm install
 npm run build     # compiles src/ -> KuBi.html
-npm test          # builds, then runs 244 journey checks + 7 bundle checks
+npm test          # builds, then runs 260 journey checks + 7 bundle checks
 ```
 
 `KuBi.html` is generated. Edit `src/`, never the bundle.
@@ -289,6 +289,33 @@ train people to ignore the ones that are.
 
 **⚠ The quantities and minimums need the clinic's own figures.** They
 reproduce the states the app already showed; they are not a stock count.
+
+## The V2 principle
+
+> KuBi V2 should not ask staff to enter more information. It should use the
+> information already entered to make the next decision easier.
+
+This is asserted, not just stated. The journey test walks the chain and
+fails if a link breaks:
+
+| staff record | KuBi works out |
+|---|---|
+| crown received *(one tick)* | treatment is ready |
+| procedure finished *(one button)* | documentation required; two timeline entries |
+| case closed *(one button)* | the patient is due back on a date |
+
+Nothing in that chain asks for anything twice.
+
+### Expiry is the exception, and it is treated as one
+
+No fact already in KuBi implies the date printed on a box, so expiry is the
+one thing that needs an entry. It asks for the least possible, at the only
+moment somebody is already holding the box: **one date per delivery**.
+After that, expired stock stops counting as stock — which feeds the same
+READY / LOW / NOT AVAILABLE the clinic already reads, and the reorder list.
+
+Expiry is **opt-in per material**. Gloves and gauze do not need a date, and
+asking for one would be the very thing the principle forbids.
 
 ## Two rules that hold the design together
 

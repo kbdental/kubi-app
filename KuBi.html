@@ -822,7 +822,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 01 Sept 2026, 04:37 pm';
+  window.KuBi.BUILD_STAMP = 'Build: 01 Sept 2026, 04:50 pm';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -34821,6 +34821,26 @@ window.KuBi.STRINGS = {
     en: 'for',
     hi: 'के लिए'
   },
+  'inv.expiring': {
+    en: 'Expiring',
+    hi: 'एक्सपायर हो रहा है'
+  },
+  'inv.expired': {
+    en: 'EXPIRED',
+    hi: 'एक्सपायर हो चुका'
+  },
+  'inv.expiresIn': {
+    en: 'in',
+    hi: 'में'
+  },
+  'inv.days': {
+    en: 'days',
+    hi: 'दिन'
+  },
+  'inv.expiringNone': {
+    en: 'Nothing expiring soon.',
+    hi: 'जल्दी कुछ एक्सपायर नहीं हो रहा।'
+  },
   'inv.low': {
     en: 'low',
     hi: 'कम है'
@@ -37925,15 +37945,27 @@ window.KuBi.MATERIALS = [{
 }, {
   id: 'anaesthetic',
   name: s('Anaesthetic cartridges', 'एनेस्थीसिया कार्ट्रिज'),
-  qty: 120,
   min: 40,
-  unit: 'cartridges'
+  unit: 'cartridges',
+  batches: [{
+    id: 'AN-2431',
+    qty: 90,
+    expires: _labDay(120)
+  }, {
+    id: 'AN-2298',
+    qty: 30,
+    expires: _labDay(9)
+  }]
 }, {
   id: 'composite',
   name: s('Composite material', 'कंपोजिट मटीरियल'),
-  qty: 25,
   min: 8,
-  unit: 'syringes'
+  unit: 'syringes',
+  batches: [{
+    id: 'CO-1180',
+    qty: 25,
+    expires: _labDay(240)
+  }]
 }, {
   id: 'impression',
   name: s('Impression material', 'इम्प्रेशन मटीरियल'),
@@ -37943,9 +37975,18 @@ window.KuBi.MATERIALS = [{
 }, {
   id: 'cement',
   name: s('Luting cement', 'ल्यूटिंग सीमेंट'),
-  qty: 14,
   min: 5,
-  unit: 'packs'
+  unit: 'packs',
+  // Six of these are already past their date, so only 8 are stock.
+  batches: [{
+    id: 'CE-0912',
+    qty: 8,
+    expires: _labDay(75)
+  }, {
+    id: 'CE-0844',
+    qty: 6,
+    expires: _labDay(-4)
+  }]
 }, {
   id: 'implant_comp',
   name: s('Implant components', 'इम्प्लांट कंपोनेंट'),
@@ -37972,15 +38013,82 @@ window.KuBi.MATERIALS = [{
   unit: 'pairs'
 }];
 
+// ---- expiry ------------------------------------------------------------
+//
+// A HONEST NOTE ON THE V2 PRINCIPLE.
+// Everything else in V2 is worked out from what staff already record.
+// Expiry cannot be: no fact already in KuBi implies the date printed on a
+// box. It is the one thing here that needs an entry.
+//
+// So it asks for the least possible, at the only moment somebody is
+// already holding the box: when stock arrives. One date per delivery.
+// After that KuBi does the rest — expired stock stops counting as stock,
+// which feeds the same READY / LOW / NOT AVAILABLE the clinic already
+// reads, and the reorder list, with nothing further asked of anybody.
+//
+// Materials with no batches keep working exactly as before. Expiry is
+// opt-in per material, because gloves and gauze do not need it and asking
+// would be the very thing this principle forbids.
+
+/** Has this batch passed its date? */
+window.KuBi.batchExpired = function (batch, today) {
+  if (!batch || !batch.expires) return false;
+  return batch.expires < (today || window.KuBi.operatingDate());
+};
+
+/** Days until it expires — negative once it has. */
+window.KuBi.batchDaysLeft = function (batch, today) {
+  if (!batch || !batch.expires) return null;
+  const from = new Date((today || window.KuBi.operatingDate()) + 'T00:00:00').getTime();
+  const to = new Date(batch.expires + 'T00:00:00').getTime();
+  return Math.round((to - from) / 86400000);
+};
+
+/**
+ * What can actually be used. Expired stock is still on the shelf but it is
+ * not stock, and counting it is how a clinic discovers it has none of
+ * something at the moment it needs it.
+ */
+window.KuBi.usableQty = function (m) {
+  if (!m) return 0;
+  if (!m.batches || !m.batches.length) return typeof m.qty === 'number' ? m.qty : 0;
+  return m.batches.reduce(function (n, b) {
+    return n + (window.KuBi.batchExpired(b) ? 0 : b.qty || 0);
+  }, 0);
+};
+
+/** Batches expiring within `days`, soonest first. Expired ones included. */
+window.KuBi.expiringSoon = function (days) {
+  const within = typeof days === 'number' ? days : 30;
+  const out = [];
+  (window.KuBi.MATERIALS || []).forEach(function (m) {
+    (m.batches || []).forEach(function (b) {
+      const left = window.KuBi.batchDaysLeft(b);
+      if (left === null || left > within) return;
+      out.push({
+        material: m,
+        batch: b,
+        daysLeft: left,
+        expired: left < 0
+      });
+    });
+  });
+  return out.sort(function (a, b) {
+    return a.daysLeft - b.daysLeft;
+  });
+};
+
 /**
  * READY / LOW / NOT AVAILABLE, and nothing more complicated than that.
  * Derived every time so it cannot drift from the quantity it describes.
  */
 window.KuBi.materialState = function (m) {
   if (!m) return 'ok';
-  if (typeof m.qty !== 'number') return m.state || 'ok'; // unmeasured stock
-  if (m.qty <= 0) return 'out';
-  if (m.qty <= m.min) return 'low';
+  const batched = !!(m.batches && m.batches.length);
+  if (!batched && typeof m.qty !== 'number') return m.state || 'ok'; // unmeasured
+  const usable = window.KuBi.usableQty(m);
+  if (usable <= 0) return 'out';
+  if (usable <= m.min) return 'low';
   return 'ok';
 };
 
@@ -38293,7 +38401,8 @@ window.KuBi.supplyOutlook = function (appointmentsToday) {
     today: problems(window.KuBi.requirementFor(typesToday)),
     tomorrow: problems(window.KuBi.requirementFor(typesTomorrow)),
     week: problems(window.KuBi.requirementFor(typesWeek)),
-    reorder: window.KuBi.reorderList()
+    reorder: window.KuBi.reorderList(),
+    expiring: window.KuBi.expiringSoon(30)
   };
 };
 
@@ -38397,6 +38506,144 @@ window.KuBi.PROCEDURE_MATERIALS_V2 = {
   'Paediatric Treatment': ['anaesthetic', 'composite'],
   'Pulpotomy/Pulpectomy': ['anaesthetic', 'composite'],
   'Night Guard/Splint': ['impression']
+};
+
+// What happens AFTER a case of this type closes, and how long after.
+// This is the last link in the chain the specification asks for:
+//
+//   staff close the case → KuBi knows a follow-up is due on X
+//
+// Nobody is asked to book it. The procedure already says what review it
+// needs; the closing date is already recorded. A follow-up derived from
+// those two facts costs no keystrokes.
+//
+// ⚠ THE INTERVALS NEED A DENTIST'S REVIEW.
+window.KuBi.TREATMENT_FOLLOWUP = {
+  'RCT': {
+    afterDays: 180,
+    reason: s('RCT review', 'RCT रिव्यू')
+  },
+  'Re-RCT': {
+    afterDays: 180,
+    reason: s('RCT review', 'RCT रिव्यू')
+  },
+  'Crown': {
+    afterDays: 7,
+    reason: s('Crown review', 'क्राउन रिव्यू')
+  },
+  'Bridge': {
+    afterDays: 7,
+    reason: s('Bridge review', 'ब्रिज रिव्यू')
+  },
+  'Veneer': {
+    afterDays: 7,
+    reason: s('Veneer review', 'विनियर रिव्यू')
+  },
+  'Smile Design': {
+    afterDays: 14,
+    reason: s('Smile design review', 'स्माइल डिज़ाइन रिव्यू')
+  },
+  'Extraction': {
+    afterDays: 7,
+    reason: s('Healing check', 'हीलिंग जांच')
+  },
+  'Surgical Extraction': {
+    afterDays: 1,
+    reason: s('Post-operative call', 'सर्जरी के बाद कॉल')
+  },
+  'Wisdom Tooth Surgery': {
+    afterDays: 1,
+    reason: s('Post-operative call', 'सर्जरी के बाद कॉल')
+  },
+  'Implant Surgery': {
+    afterDays: 1,
+    reason: s('Post-operative call', 'सर्जरी के बाद कॉल')
+  },
+  'Bone Grafting': {
+    afterDays: 1,
+    reason: s('Post-operative call', 'सर्जरी के बाद कॉल')
+  },
+  'Sinus Lift': {
+    afterDays: 1,
+    reason: s('Post-operative call', 'सर्जरी के बाद कॉल')
+  },
+  'Periodontal Surgery': {
+    afterDays: 1,
+    reason: s('Post-operative call', 'सर्जरी के बाद कॉल')
+  },
+  'Implant Prosthesis': {
+    afterDays: 30,
+    reason: s('Implant review', 'इम्प्लांट रिव्यू')
+  },
+  'Denture': {
+    afterDays: 7,
+    reason: s('Denture adjustment check', 'डेन्चर एडजस्टमेंट जांच')
+  },
+  'Full Mouth Rehabilitation': {
+    afterDays: 30,
+    reason: s('Rehabilitation review', 'रिहैबिलिटेशन रिव्यू')
+  },
+  'Scaling': {
+    afterDays: 180,
+    reason: s('Scaling recall', 'स्केलिंग रिकॉल')
+  },
+  'Whitening': {
+    afterDays: 14,
+    reason: s('Whitening review', 'व्हाइटनिंग रिव्यू')
+  },
+  'Filling': {
+    afterDays: 180,
+    reason: s('Routine check', 'नियमित जांच')
+  },
+  'Pulpotomy/Pulpectomy': {
+    afterDays: 90,
+    reason: s('Paediatric review', 'बच्चों का रिव्यू')
+  },
+  'Paediatric Treatment': {
+    afterDays: 180,
+    reason: s('Paediatric recall', 'बच्चों का रिकॉल')
+  },
+  'Braces': {
+    afterDays: 30,
+    reason: s('Orthodontic adjustment', 'ऑर्थो एडजस्टमेंट')
+  },
+  'Aligner': {
+    afterDays: 30,
+    reason: s('Aligner review', 'अलाइनर रिव्यू')
+  },
+  'Retainer': {
+    afterDays: 180,
+    reason: s('Retainer check', 'रिटेनर जांच')
+  },
+  'Night Guard/Splint': {
+    afterDays: 30,
+    reason: s('Splint review', 'स्प्लिंट जांच')
+  },
+  'TMD Assessment': {
+    afterDays: 30,
+    reason: s('TMD review', 'TMD रिव्यू')
+  },
+  'Post & Core': {
+    afterDays: 7,
+    reason: s('Crown review', 'क्राउन रिव्यू')
+  }
+};
+
+/**
+ * The follow-up a closed case is due, worked out rather than booked.
+ * Returns null when the procedure needs none, or when the case is not
+ * closed — a case still in treatment has not earned a follow-up yet.
+ */
+window.KuBi.derivedFollowUp = function (procedureType, closedAt, lang) {
+  const rule = window.KuBi.TREATMENT_FOLLOWUP[procedureType];
+  if (!rule || !closedAt) return null;
+  const due = window.KuBi.operatingDate(new Date(new Date(closedAt).getTime() + rule.afterDays * 86400000));
+  return {
+    due: due,
+    reason: lang && rule.reason[lang] || rule.reason.en,
+    afterDays: rule.afterDays,
+    derived: true
+  };
 };
 
 /** Stage names for a procedure, in the chosen language. */
@@ -38789,13 +39036,22 @@ window.KuBi.caseClosure = function (caseId, ctx) {
   const proc = (c.procedureState || {})[appt ? appt.id : ''] || null;
   const visitDocumented = !!(appt && (c.closedCases || {})[appt.id]);
   const progress = window.KuBi.caseProgress(caseId, c.appointments);
-  const followUp = window.KuBi.caseFollowUp(caseId);
+  const caseClosed = progress.allStagesDone && (!appt || visitDocumented);
+
+  // A follow-up somebody booked wins. Failing that, once the case is
+  // closed KuBi works one out from the procedure and the closing date —
+  // both already recorded, so nobody is asked to book anything. This is
+  // the last link of the chain: close the case, and KuBi knows when the
+  // patient is due back.
+  const booked = window.KuBi.caseFollowUp(caseId);
+  const closedAt = appt && (c.closedCases || {})[appt.id] && (c.closedCases || {})[appt.id].closedAt;
+  const followUp = booked || (caseClosed ? window.KuBi.derivedFollowUp(window.KuBi.caseById(caseId).procedureType, closedAt || window.KuBi.operatingDate(), c.lang) : null);
   return {
     treatmentDone: !!(proc && proc.completedAt),
     visitDocumented: visitDocumented,
     // A case with an unfinished stage is not closed, however well today's
     // visit was written up.
-    caseClosed: progress.allStagesDone && (!appt || visitDocumented),
+    caseClosed: caseClosed,
     followUp: followUp,
     followUpDue: window.KuBi.followUpIsDue(followUp)
   };
@@ -41063,6 +41319,21 @@ window.KuBi.Clinic = function Clinic({
     }, /*#__PURE__*/React.createElement("div", {
       className: "card-title"
     }, t('inv.outlook', lang)), period('inv.today', outlook.today), period('inv.tomorrow', outlook.tomorrow), period('inv.thisWeek', outlook.week), /*#__PURE__*/React.createElement("div", {
+      className: "inv-period"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "inv-period-label"
+    }, t('inv.expiring', lang)), outlook.expiring.length === 0 ? /*#__PURE__*/React.createElement("span", {
+      className: "inv-period-ok"
+    }, t('inv.expiringNone', lang)) : /*#__PURE__*/React.createElement("span", {
+      className: "inv-period-rows"
+    }, outlook.expiring.map(function (e) {
+      return /*#__PURE__*/React.createElement("span", {
+        key: e.material.id + e.batch.id,
+        className: 'inv-period-row' + (e.expired ? ' inv-out' : '')
+      }, e.expired ? '🔴 ' : '🟠 ', pick(e.material.name, lang), /*#__PURE__*/React.createElement("span", {
+        className: "inv-period-for"
+      }, ' ', e.expired ? t('inv.expired', lang) : t('inv.expiresIn', lang) + ' ' + e.daysLeft + ' ' + t('inv.days', lang)));
+    }))), /*#__PURE__*/React.createElement("div", {
       className: "inv-reorder"
     }, /*#__PURE__*/React.createElement("span", {
       className: "inv-period-label"

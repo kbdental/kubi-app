@@ -240,14 +240,26 @@ window.KuBi.caseClosure = function (caseId, ctx) {
   const proc = (c.procedureState || {})[appt ? appt.id : ''] || null;
   const visitDocumented = !!(appt && (c.closedCases || {})[appt.id]);
   const progress = window.KuBi.caseProgress(caseId, c.appointments);
-  const followUp = window.KuBi.caseFollowUp(caseId);
+  const caseClosed = progress.allStagesDone && (!appt || visitDocumented);
+
+  // A follow-up somebody booked wins. Failing that, once the case is
+  // closed KuBi works one out from the procedure and the closing date —
+  // both already recorded, so nobody is asked to book anything. This is
+  // the last link of the chain: close the case, and KuBi knows when the
+  // patient is due back.
+  const booked = window.KuBi.caseFollowUp(caseId);
+  const closedAt = appt && (c.closedCases || {})[appt.id] && (c.closedCases || {})[appt.id].closedAt;
+  const followUp = booked || (caseClosed
+    ? window.KuBi.derivedFollowUp(window.KuBi.caseById(caseId).procedureType,
+                                  closedAt || window.KuBi.operatingDate(), c.lang)
+    : null);
 
   return {
     treatmentDone: !!(proc && proc.completedAt),
     visitDocumented: visitDocumented,
     // A case with an unfinished stage is not closed, however well today's
     // visit was written up.
-    caseClosed: progress.allStagesDone && (!appt || visitDocumented),
+    caseClosed: caseClosed,
     followUp: followUp,
     followUpDue: window.KuBi.followUpIsDue(followUp),
   };

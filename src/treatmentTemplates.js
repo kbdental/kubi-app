@@ -96,6 +96,64 @@ window.KuBi.PROCEDURE_MATERIALS_V2 = {
   'Night Guard/Splint':        ['impression'],
 };
 
+// What happens AFTER a case of this type closes, and how long after.
+// This is the last link in the chain the specification asks for:
+//
+//   staff close the case → KuBi knows a follow-up is due on X
+//
+// Nobody is asked to book it. The procedure already says what review it
+// needs; the closing date is already recorded. A follow-up derived from
+// those two facts costs no keystrokes.
+//
+// ⚠ THE INTERVALS NEED A DENTIST'S REVIEW.
+window.KuBi.TREATMENT_FOLLOWUP = {
+  'RCT':                       { afterDays: 180, reason: s('RCT review', 'RCT रिव्यू') },
+  'Re-RCT':                    { afterDays: 180, reason: s('RCT review', 'RCT रिव्यू') },
+  'Crown':                     { afterDays: 7,   reason: s('Crown review', 'क्राउन रिव्यू') },
+  'Bridge':                    { afterDays: 7,   reason: s('Bridge review', 'ब्रिज रिव्यू') },
+  'Veneer':                    { afterDays: 7,   reason: s('Veneer review', 'विनियर रिव्यू') },
+  'Smile Design':              { afterDays: 14,  reason: s('Smile design review', 'स्माइल डिज़ाइन रिव्यू') },
+  'Extraction':                { afterDays: 7,   reason: s('Healing check', 'हीलिंग जांच') },
+  'Surgical Extraction':       { afterDays: 1,   reason: s('Post-operative call', 'सर्जरी के बाद कॉल') },
+  'Wisdom Tooth Surgery':      { afterDays: 1,   reason: s('Post-operative call', 'सर्जरी के बाद कॉल') },
+  'Implant Surgery':           { afterDays: 1,   reason: s('Post-operative call', 'सर्जरी के बाद कॉल') },
+  'Bone Grafting':             { afterDays: 1,   reason: s('Post-operative call', 'सर्जरी के बाद कॉल') },
+  'Sinus Lift':                { afterDays: 1,   reason: s('Post-operative call', 'सर्जरी के बाद कॉल') },
+  'Periodontal Surgery':       { afterDays: 1,   reason: s('Post-operative call', 'सर्जरी के बाद कॉल') },
+  'Implant Prosthesis':        { afterDays: 30,  reason: s('Implant review', 'इम्प्लांट रिव्यू') },
+  'Denture':                   { afterDays: 7,   reason: s('Denture adjustment check', 'डेन्चर एडजस्टमेंट जांच') },
+  'Full Mouth Rehabilitation': { afterDays: 30,  reason: s('Rehabilitation review', 'रिहैबिलिटेशन रिव्यू') },
+  'Scaling':                   { afterDays: 180, reason: s('Scaling recall', 'स्केलिंग रिकॉल') },
+  'Whitening':                 { afterDays: 14,  reason: s('Whitening review', 'व्हाइटनिंग रिव्यू') },
+  'Filling':                   { afterDays: 180, reason: s('Routine check', 'नियमित जांच') },
+  'Pulpotomy/Pulpectomy':      { afterDays: 90,  reason: s('Paediatric review', 'बच्चों का रिव्यू') },
+  'Paediatric Treatment':      { afterDays: 180, reason: s('Paediatric recall', 'बच्चों का रिकॉल') },
+  'Braces':                    { afterDays: 30,  reason: s('Orthodontic adjustment', 'ऑर्थो एडजस्टमेंट') },
+  'Aligner':                   { afterDays: 30,  reason: s('Aligner review', 'अलाइनर रिव्यू') },
+  'Retainer':                  { afterDays: 180, reason: s('Retainer check', 'रिटेनर जांच') },
+  'Night Guard/Splint':        { afterDays: 30,  reason: s('Splint review', 'स्प्लिंट जांच') },
+  'TMD Assessment':            { afterDays: 30,  reason: s('TMD review', 'TMD रिव्यू') },
+  'Post & Core':               { afterDays: 7,   reason: s('Crown review', 'क्राउन रिव्यू') },
+};
+
+/**
+ * The follow-up a closed case is due, worked out rather than booked.
+ * Returns null when the procedure needs none, or when the case is not
+ * closed — a case still in treatment has not earned a follow-up yet.
+ */
+window.KuBi.derivedFollowUp = function (procedureType, closedAt, lang) {
+  const rule = window.KuBi.TREATMENT_FOLLOWUP[procedureType];
+  if (!rule || !closedAt) return null;
+  const due = window.KuBi.operatingDate(
+    new Date(new Date(closedAt).getTime() + rule.afterDays * 86400000));
+  return {
+    due: due,
+    reason: (lang && rule.reason[lang]) || rule.reason.en,
+    afterDays: rule.afterDays,
+    derived: true,
+  };
+};
+
 /** Stage names for a procedure, in the chosen language. */
 window.KuBi.templateStages = function (procedureType, lang) {
   const stages = window.KuBi.TREATMENT_STAGES[procedureType] || [];

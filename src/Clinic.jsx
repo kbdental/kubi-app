@@ -435,6 +435,30 @@ window.KuBi.Clinic = function Clinic({ currentUser, lang, checked, onToggle, cli
                     {period('inv.today', outlook.today)}
                     {period('inv.tomorrow', outlook.tomorrow)}
                     {period('inv.thisWeek', outlook.week)}
+                    <div className="inv-period">
+                      <span className="inv-period-label">{t('inv.expiring', lang)}</span>
+                      {outlook.expiring.length === 0 ? (
+                        <span className="inv-period-ok">{t('inv.expiringNone', lang)}</span>
+                      ) : (
+                        <span className="inv-period-rows">
+                          {outlook.expiring.map(function (e) {
+                            return (
+                              <span key={e.material.id + e.batch.id}
+                                    className={'inv-period-row' + (e.expired ? ' inv-out' : '')}>
+                                {e.expired ? '🔴 ' : '🟠 '}
+                                {pick(e.material.name, lang)}
+                                <span className="inv-period-for">
+                                  {' '}{e.expired
+                                    ? t('inv.expired', lang)
+                                    : t('inv.expiresIn', lang) + ' ' + e.daysLeft + ' ' + t('inv.days', lang)}
+                                </span>
+                              </span>
+                            );
+                          })}
+                        </span>
+                      )}
+                    </div>
+
                     <div className="inv-reorder">
                       <span className="inv-period-label">{t('inv.reorder', lang)}</span>
                       {outlook.reorder.length === 0 ? (

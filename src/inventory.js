@@ -53,13 +53,13 @@ function _labDay(offset) {
 // chased BEFORE the patient is sitting in the waiting room. A case with no
 // due date is not overdue — unknown is not a deadline.
 window.KuBi.LAB_CASES = {
-  A2: { received: true,  item: s('Crown', 'क्राउन'),
+  A2: { received: true,  item: s('Crown', 'क्राउन'), caseId: 'MR0184-CROWN_SINGLE-01',
         patient: 'Meera Reddy', lab: 'Sharma Dental Lab', sent: _labDay(-6), due: _labDay(-1) },
-  A4: { received: true,  item: s('Implant prosthesis', 'इम्प्लांट प्रोस्थेसिस'),
+  A4: { received: true,  item: s('Implant prosthesis', 'इम्प्लांट प्रोस्थेसिस'), caseId: 'DN077-IMPLANT_CROWN-01',
         patient: 'Devika Nair', lab: 'Precision Ceramics', sent: _labDay(-9), due: _labDay(0) },
-  A7: { received: false, item: s('Crown', 'क्राउन'),
+  A7: { received: false, item: s('Crown', 'क्राउन'), caseId: 'VS0221-CROWN_SINGLE-01',
         patient: 'Vikram Shah', lab: 'Sharma Dental Lab', sent: _labDay(-8), due: _labDay(-2) },
-  A8: { received: false, item: s('Denture — try-in', 'डेन्चर — ट्राई-इन'),
+  A8: { received: false, item: s('Denture — try-in', 'डेन्चर — ट्राई-इन'), caseId: 'LM0455-RCT_MOLAR-01',
         patient: 'Leela Menon', lab: 'Precision Ceramics', sent: _labDay(-3), due: _labDay(2) },
 };
 
@@ -78,7 +78,7 @@ window.KuBi.labArrived = function (apptId, received) {
 window.KuBi.labCases = function (received) {
   return Object.keys(window.KuBi.LAB_CASES).map(function (apptId) {
     const c = window.KuBi.LAB_CASES[apptId];
-    return Object.assign({ apptId: apptId }, c, { received: window.KuBi.labArrived(apptId, received) });
+    return Object.assign({ apptId: apptId, caseId: c.caseId || null }, c, { received: window.KuBi.labArrived(apptId, received) });
   }).sort(function (a, b) { return String(a.due || '').localeCompare(String(b.due || '')); });
 };
 

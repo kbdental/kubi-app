@@ -13,6 +13,7 @@ module.exports = [
   'src/repairs.js',
   'src/sterilization.js',
   'src/inventory.js',
+  'src/cases.js',
   'src/nextAction.js',
   'src/mis.js',
   'src/dayStore.js',

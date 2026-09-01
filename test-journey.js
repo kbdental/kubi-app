@@ -697,6 +697,65 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
         eqAttention(Object.assign({}, brokenChair3, brokenShared)) === 2);
   check('A working clinic lists no faults', eqAttention({ chair_2: { ok: true } }) === 0);
 
+  // 31. THE CASE — Patient -> Case -> Stage -> Visit -> Closure.
+  //     V1 held case data as fields on today's appointment, so a case with
+  //     nobody booked in existed nowhere, and lab work, follow-ups and
+  //     lapsed patients referenced no case at all.
+  const caseCtx = { appointments: K.APPOINTMENTS_TODAY, procedureState: {}, closedCases: {}, labReceived: {} };
+
+  const seen = K.caseThread('AP0311-RCT_MOLAR-01', caseCtx);
+  check('A case assembles into one thread',
+        !!seen && seen.patient === 'Arjun Prasad' && !!seen.today && seen.progress.current === 'Cleaning / medication',
+        seen ? seen.progress.visitsDone + '/' + seen.progress.visitsTotal + ' visits' : 'null');
+  check('The thread knows what comes next', seen.progress.next === 'Obturation', seen.progress.next);
+
+  // The case V1 could not see.
+  const unbooked = K.caseThread('VS0221-CROWN_SINGLE-01', caseCtx);
+  check('A case with nobody booked today still exists',
+        !!unbooked && unbooked.today === null && unbooked.progress.current === 'Try-in',
+        unbooked ? 'current: ' + unbooked.progress.current : 'null');
+  check('...and knows its lab work is awaited',
+        unbooked.lab.length === 1 && unbooked.lab[0].received === false, unbooked.lab.length + ' lab item(s)');
+  check('...and knows its follow-up is overdue',
+        !!unbooked.closure.followUp && unbooked.closure.followUpDue === true);
+
+  // The joins that did not exist.
+  check('Lab work can be found by case', K.caseLab('LM0455-RCT_MOLAR-01', {}).length === 1);
+  check('A follow-up can be found by case', !!K.caseFollowUp('LM0455-RCT_MOLAR-01'));
+  check('A patient can be asked for their cases', K.casesForPatient('Vikram Shah').length === 1);
+  check('A follow-up with no case is still valid',
+        (K.FOLLOW_UPS || []).some(f => !f.caseId), 'one-off reviews keep working');
+
+  // Closure: three states V1 collapsed into one.
+  const scalingAppt = stages => ({ id: 'CZ', patient: 'Kabir Singh', chair: 3, status: 'in_chair',
+                                   procedureType: 'Scaling', caseId: 'KS0502-SCALING-01', time: '10:45',
+                                   caseStages: stages });
+  const openStage = [{ name: 'Scaling + polishing', done: false, current: true }];
+  const doneStage = [{ name: 'Scaling + polishing', done: true }];
+  const clo = (stages, proc, closed) => K.caseClosure('KS0502-SCALING-01',
+      { appointments: [scalingAppt(stages)], procedureState: proc, closedCases: closed });
+
+  check('Treatment done is not the same as written up',
+        clo(openStage, { CZ: { completedAt: new Date() } }, {}).treatmentDone === true &&
+        clo(openStage, { CZ: { completedAt: new Date() } }, {}).visitDocumented === false);
+  check('Written up is not the same as case closed',
+        clo(openStage, { CZ: { completedAt: new Date() } }, { CZ: true }).visitDocumented === true &&
+        clo(openStage, { CZ: { completedAt: new Date() } }, { CZ: true }).caseClosed === false);
+  check('A case closes when its last stage is done and written up',
+        clo(doneStage, { CZ: { completedAt: new Date() } }, { CZ: true }).caseClosed === true);
+
+  // The one V1 got wrong: a good visit on a four-stage case is not the end.
+  const midCase = K.caseClosure('AP0311-RCT_MOLAR-01', {
+    appointments: [{ id: 'A1', caseId: 'AP0311-RCT_MOLAR-01', patient: 'Arjun Prasad', chair: 1, status: 'done',
+                     procedureType: 'RCT', time: '09:30',
+                     caseStages: [{ name: 'Cleaning', done: true }, { name: 'Cleaning / medication', done: true },
+                                  { name: 'Obturation', done: false }, { name: 'Restoration', done: false }] }],
+    procedureState: { A1: { completedAt: new Date() } }, closedCases: { A1: true } });
+  check('A documented visit does not close a half-finished case',
+        midCase.visitDocumented === true && midCase.caseClosed === false);
+  check('Open cases are the ones with work left', K.openCases(caseCtx).length === K.allCases().length,
+        K.openCases(caseCtx).length + ' of ' + K.allCases().length);
+
   // SUMMARY
   await step(() => {}, 150);
   const failed = results.filter(r => !r.pass);

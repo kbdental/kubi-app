@@ -94,11 +94,15 @@ window.KuBi.stageLabel = function (appt) {
 // (which owns appointments); standalone, it's maintained here. `due` is
 // a plain date string so KuBi never has to reason about scheduling.
 var _fuDay = function (offset) { return window.KuBi.operatingDate(new Date(Date.now() + offset * 86400000)); };
+// `caseId` is what ties a follow-up back to the treatment it belongs to.
+// Without it a follow-up is only a name and a date, and nothing can answer
+// "what is this patient's case waiting for". Follow-ups with no case are
+// still valid — a one-off review after a single visit.
 window.KuBi.FOLLOW_UPS = [
-  { id: 'F1', patient: 'Sanjay Bhatt',  reason: 'Suture removal',      due: _fuDay(0) },
-  { id: 'F2', patient: 'Anita Desai',   reason: 'Post-implant review', due: _fuDay(1) },
-  { id: 'F3', patient: 'Vikram Shah',   reason: 'Crown fitting',       due: _fuDay(-4), phone: true },
-  { id: 'F4', patient: 'Leela Menon',   reason: 'RCT review',          due: _fuDay(3) },
+  { id: 'F1', patient: 'Sanjay Bhatt',  reason: 'Suture removal',      due: _fuDay(0),  caseId: null },
+  { id: 'F2', patient: 'Anita Desai',   reason: 'Post-implant review', due: _fuDay(1),  caseId: null },
+  { id: 'F3', patient: 'Vikram Shah',   reason: 'Crown fitting',       due: _fuDay(-4), phone: true, caseId: 'VS0221-CROWN_SINGLE-01' },
+  { id: 'F4', patient: 'Leela Menon',   reason: 'RCT review',          due: _fuDay(3),  caseId: 'LM0455-RCT_MOLAR-01' },
 ];
 
 // Overdue is DERIVED from the date, never stored — a stored flag goes
@@ -120,7 +124,7 @@ window.KuBi.LAPSED_AFTER_DAYS = 30;
 window.KuBi.PATIENT_RECORDS = [
   { id: 'P1', patient: 'Rakesh Iyer',    lastVisit: _fuDay(-42), planned: 'Full-mouth rehabilitation', started: false },
   { id: 'P2', patient: 'Nisha Kapoor',   lastVisit: _fuDay(-64), planned: 'Implant, lower right 6',    started: false },
-  { id: 'P3', patient: 'Imran Qureshi',  lastVisit: _fuDay(-38), planned: 'RCT 26, then crown',        started: true },
+  { id: 'P3', patient: 'Imran Qureshi',  lastVisit: _fuDay(-38), planned: 'RCT 26, then crown',        started: true, caseId: null },
   { id: 'P4', patient: 'Sunita Rao',     lastVisit: _fuDay(-9),  planned: 'Orthodontic review',        started: true },
   { id: 'P5', patient: 'Harish Menon',   lastVisit: _fuDay(-95), planned: 'Denture — upper',           started: true },
 ];

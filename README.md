@@ -13,7 +13,7 @@ React is bundled in.
 ```bash
 npm install
 npm run build     # compiles src/ -> KuBi.html
-npm test          # builds, then runs 129 journey checks + 7 bundle checks
+npm test          # builds, then runs 150 journey checks + 7 bundle checks
 ```
 
 `KuBi.html` is generated. Edit `src/`, never the bundle.
@@ -29,6 +29,7 @@ src/
   clinicReadiness.js   Opening checklist, room mapping
   clinicClosing.js     11-item closing gate (5 critical)
   patientCheckIn.js    Appointments, journey stages, follow-ups, lapsed
+  cases.js             THE CASE — the thread joining all of the above
   treatmentChecklists.js  27 procedures, before/after, closure gate
   attention.js         What needs attention, with owner + reason
   equipment.js         Equipment status list
@@ -72,6 +73,25 @@ and lives at the end of `index.html`.
 Deliberately NOT `overflow-x: hidden`: hiding an overflow puts content out
 of reach with no sign it is there. Anything that cannot fit wraps or
 scrolls in its own box.
+
+## The Case
+
+`cases.js` is the thread: **Patient → Case → Stage → Visit → Closure**. It is
+not a screen, and there is no Cases area — a case is reached by clicking a
+patient, a treatment, or today's appointment.
+
+One place per fact, so nothing can disagree:
+
+- the case's identity and stage list — `cases.js`
+- progress through the stages today — the appointment, because that is the
+  live state staff change and the state that persists
+- whether today's visit is written up — `closedCases`, as before
+
+`caseThread(caseId, ctx)` assembles them. Three states V1 collapsed into one
+are now distinct: **treatment done** (today's procedure finished), **visit
+documented** (V1's "case closed"), and **case closed** (every stage done and
+the last visit written up). A documented visit on a four-stage RCT does not
+close the case.
 
 ## Two rules that hold the design together
 

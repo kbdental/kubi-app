@@ -218,7 +218,14 @@ window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setS
                 <React.Fragment>
                   <div className="strip-label strip-label-case">{t('journey.caseLabel', lang)} — {a.procedureType}</div>
                   <div className="journey-strip case-strip">
-                    {a.caseStages.map(function (cs, i) {
+                    {/* Read through the case rather than off the appointment, so
+                        the strip and everything else that asks about this case
+                        cannot end up describing different stages. Falls back to
+                        the appointment's own list for a case the registry does
+                        not know, which keeps a one-off visit rendering. */}
+                    {(window.KuBi.caseById(a.caseId)
+                      ? window.KuBi.caseProgress(a.caseId, appointments).stages
+                      : a.caseStages).map(function (cs, i, all) {
                       const state = cs.done ? 'journey-past' : cs.current ? 'journey-now' : 'journey-future';
                       return (
                         <React.Fragment key={i}>
@@ -227,7 +234,7 @@ window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setS
                             <div className="journey-label">{t('journey.visitShort', lang)} {i + 1}</div>
                             <div className="case-stage-name">{cs.name}</div>
                           </div>
-                          {i < a.caseStages.length - 1 ? <div className={'journey-line ' + (cs.done ? 'journey-line-done' : '')} /> : null}
+                          {i < all.length - 1 ? <div className={'journey-line ' + (cs.done ? 'journey-line-done' : '')} /> : null}
                         </React.Fragment>
                       );
                     })}

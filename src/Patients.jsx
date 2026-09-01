@@ -132,8 +132,8 @@ window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setS
                    tpl.materials.length
                      ? tpl.materials.map(function (m) { return m.name[lang] || m.name.en; }).join(', ')
                      : t('case.none', lang),
-                   tpl.materials.some(function (m) { return m.state === 'out'; }) ? 'bad'
-                     : tpl.materials.some(function (m) { return m.state === 'low'; }) ? 'warn' : 'good')}
+                   tpl.materials.some(function (m) { return window.KuBi.materialState(m) === 'out'; }) ? 'bad'
+                     : tpl.materials.some(function (m) { return window.KuBi.materialState(m) === 'low'; }) ? 'warn' : 'good')}
               {(function () {
                 // A treatment that needs a lab with nothing recorded is a
                 // different problem from work that is simply not back yet,

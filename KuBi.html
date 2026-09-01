@@ -822,7 +822,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 01 Sept 2026, 04:31 pm';
+  window.KuBi.BUILD_STAMP = 'Build: 01 Sept 2026, 04:37 pm';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -34781,6 +34781,46 @@ window.KuBi.STRINGS = {
     en: 'Everything available',
     hi: 'सब उपलब्ध है'
   },
+  'inv.outlook': {
+    en: 'What is coming',
+    hi: 'आगे क्या आ रहा है'
+  },
+  'inv.today': {
+    en: 'Today',
+    hi: 'आज'
+  },
+  'inv.tomorrow': {
+    en: 'Tomorrow',
+    hi: 'कल'
+  },
+  'inv.thisWeek': {
+    en: 'This week',
+    hi: 'इस हफ़्ते'
+  },
+  'inv.allReady': {
+    en: 'Everything ready',
+    hi: 'सब तैयार है'
+  },
+  'inv.notAvailable': {
+    en: 'NOT AVAILABLE',
+    hi: 'उपलब्ध नहीं'
+  },
+  'inv.isLow': {
+    en: 'LOW',
+    hi: 'कम है'
+  },
+  'inv.reorder': {
+    en: 'Reorder required',
+    hi: 'दोबारा मंगवाना है'
+  },
+  'inv.reorderNone': {
+    en: 'Nothing to reorder.',
+    hi: 'कुछ मंगवाना नहीं है।'
+  },
+  'inv.forTreatments': {
+    en: 'for',
+    hi: 'के लिए'
+  },
   'inv.low': {
     en: 'low',
     hi: 'कम है'
@@ -37860,47 +37900,103 @@ function s(en, hi) {
 
 // Stock levels. `low` means below the reorder threshold but usable;
 // `out` blocks any procedure needing it.
+// Stock, with the numbers behind it. `state` is DERIVED from quantity
+// against the minimum — it is not a field anybody sets, because a
+// hand-set state and a quantity are two facts that will disagree.
+//
+// Staff never see these numbers. The clinic view stays READY / LOW / NOT
+// AVAILABLE, which is all that changes what somebody does. The quantities
+// exist so KuBi can answer what tomorrow needs and what to reorder.
+//
+// ⚠ QUANTITIES AND MINIMUMS NEED THE CLINIC'S OWN FIGURES. These reproduce
+//   the states the app already showed; they are not a stock count.
 window.KuBi.MATERIALS = [{
   id: 'gutta_percha',
   name: s('Gutta percha', 'गटा परचा'),
-  state: 'low'
+  qty: 6,
+  min: 10,
+  unit: 'packs'
 }, {
   id: 'endo_files',
   name: s('Endodontic files', 'एंडो फाइल्स'),
-  state: 'ok'
+  qty: 40,
+  min: 12,
+  unit: 'sets'
 }, {
   id: 'anaesthetic',
   name: s('Anaesthetic cartridges', 'एनेस्थीसिया कार्ट्रिज'),
-  state: 'ok'
+  qty: 120,
+  min: 40,
+  unit: 'cartridges'
 }, {
   id: 'composite',
   name: s('Composite material', 'कंपोजिट मटीरियल'),
-  state: 'ok'
+  qty: 25,
+  min: 8,
+  unit: 'syringes'
 }, {
   id: 'impression',
   name: s('Impression material', 'इम्प्रेशन मटीरियल'),
-  state: 'ok'
+  qty: 18,
+  min: 6,
+  unit: 'packs'
 }, {
   id: 'cement',
   name: s('Luting cement', 'ल्यूटिंग सीमेंट'),
-  state: 'ok'
+  qty: 14,
+  min: 5,
+  unit: 'packs'
 }, {
   id: 'implant_comp',
   name: s('Implant components', 'इम्प्लांट कंपोनेंट'),
-  state: 'ok'
+  qty: 9,
+  min: 4,
+  unit: 'sets'
 }, {
   id: 'sutures',
   name: s('Sutures', 'टांके'),
-  state: 'ok'
+  qty: 30,
+  min: 10,
+  unit: 'packs'
 }, {
   id: 'gauze',
   name: s('Gauze', 'गॉज़'),
-  state: 'low'
+  qty: 8,
+  min: 12,
+  unit: 'packs'
 }, {
   id: 'gloves',
   name: s('Gloves', 'ग्लव्स'),
-  state: 'ok'
+  qty: 400,
+  min: 100,
+  unit: 'pairs'
 }];
+
+/**
+ * READY / LOW / NOT AVAILABLE, and nothing more complicated than that.
+ * Derived every time so it cannot drift from the quantity it describes.
+ */
+window.KuBi.materialState = function (m) {
+  if (!m) return 'ok';
+  if (typeof m.qty !== 'number') return m.state || 'ok'; // unmeasured stock
+  if (m.qty <= 0) return 'out';
+  if (m.qty <= m.min) return 'low';
+  return 'ok';
+};
+
+/** At or below its minimum — the reorder line. */
+window.KuBi.needsReorder = function (m) {
+  return window.KuBi.materialState(m) !== 'ok';
+};
+
+/** Everything to reorder, emptiest first. */
+window.KuBi.reorderList = function () {
+  return (window.KuBi.MATERIALS || []).filter(window.KuBi.needsReorder).sort(function (a, b) {
+    const sa = window.KuBi.materialState(a) === 'out' ? 0 : 1;
+    const sb = window.KuBi.materialState(b) === 'out' ? 0 : 1;
+    return sa - sb || a.qty / (a.min || 1) - b.qty / (b.min || 1);
+  });
+};
 
 // Which materials each procedure needs. Only procedures with real
 // material dependencies are listed; anything absent is assumed supplied.
@@ -38062,7 +38158,8 @@ window.KuBi.procedureSupplyStatus = function (procedureType, appt, received) {
   needed.forEach(function (mid) {
     const m = window.KuBi.materialById(mid);
     if (!m) return;
-    if (m.state === 'out') blocking.push(m);else if (m.state === 'low') low.push(m);
+    const st = window.KuBi.materialState(m);
+    if (st === 'out') blocking.push(m);else if (st === 'low') low.push(m);
   });
 
   // Lab case, where one applies to this appointment.
@@ -38087,6 +38184,116 @@ window.KuBi.procedureSupplyStatus = function (procedureType, appt, received) {
     labMissing: labMissing,
     labExpected: expectsLab,
     labUnrecorded: labUnrecorded
+  };
+};
+
+// ---- what is coming, and whether the clinic can do it -----------------
+//
+// KuBi knew only about today, so "will tomorrow be a problem" could not be
+// asked. UPCOMING is the booked diary beyond today. In a connected setup
+// it comes from Clinical Suite, which owns appointments; standalone it is
+// maintained here, and an empty list is valid — a clinic with nothing
+// booked is not an error.
+var _upDay = function (offset) {
+  return window.KuBi.operatingDate(new Date(Date.now() + offset * 86400000));
+};
+window.KuBi.UPCOMING = [{
+  date: _upDay(1),
+  patient: 'Meera Reddy',
+  procedureType: 'Crown',
+  caseId: 'MR0184-CROWN_SINGLE-01'
+}, {
+  date: _upDay(1),
+  patient: 'Imran Qureshi',
+  procedureType: 'RCT',
+  caseId: null
+}, {
+  date: _upDay(2),
+  patient: 'Devika Nair',
+  procedureType: 'Implant Prosthesis',
+  caseId: 'DN077-IMPLANT_CROWN-01'
+}, {
+  date: _upDay(3),
+  patient: 'Vikram Shah',
+  procedureType: 'Crown',
+  caseId: 'VS0221-CROWN_SINGLE-01'
+}, {
+  date: _upDay(5),
+  patient: 'Leela Menon',
+  procedureType: 'RCT',
+  caseId: 'LM0455-RCT_MOLAR-01'
+}];
+
+/** What is booked between two dates, inclusive. */
+window.KuBi.bookedBetween = function (fromDate, toDate) {
+  return (window.KuBi.UPCOMING || []).filter(function (u) {
+    return u.date >= fromDate && u.date <= toDate;
+  });
+};
+
+/**
+ * Which materials the work in a window needs, and how each of them stands.
+ * One entry per material, not per appointment: staff reorder gauze once,
+ * however many treatments want it.
+ */
+window.KuBi.requirementFor = function (procedureTypes) {
+  const seen = {};
+  (procedureTypes || []).forEach(function (type) {
+    const ids = (window.KuBi.PROCEDURE_MATERIALS || {})[type] || (window.KuBi.PROCEDURE_MATERIALS_V2 || {})[type] || [];
+    ids.forEach(function (id) {
+      const m = window.KuBi.materialById(id);
+      if (!m) return;
+      if (!seen[id]) seen[id] = {
+        material: m,
+        state: window.KuBi.materialState(m),
+        forTypes: []
+      };
+      if (seen[id].forTypes.indexOf(type) === -1) seen[id].forTypes.push(type);
+    });
+  });
+  // Worst first: what stops work before what merely worries.
+  const rank = {
+    out: 0,
+    low: 1,
+    ok: 2
+  };
+  return Object.keys(seen).map(function (id) {
+    return seen[id];
+  }).sort(function (a, b) {
+    return rank[a.state] - rank[b.state];
+  });
+};
+
+/**
+ * Today, tomorrow, the rest of the week, and what to reorder.
+ *
+ * Only problems are returned for the three periods — a list of everything
+ * that is fine is a list nobody reads. Reorder is separate because it is
+ * the manager's job, not the question "can we work today".
+ */
+window.KuBi.supplyOutlook = function (appointmentsToday) {
+  const today = window.KuBi.operatingDate();
+  const tomorrow = _upDay(1);
+  const weekEnd = _upDay(7);
+  const problems = function (reqs) {
+    return reqs.filter(function (r) {
+      return r.state !== 'ok';
+    });
+  };
+  const typesToday = (appointmentsToday || []).map(function (a) {
+    return a.procedureType;
+  });
+  const typesTomorrow = window.KuBi.bookedBetween(tomorrow, tomorrow).map(function (u) {
+    return u.procedureType;
+  });
+  const typesWeek = window.KuBi.bookedBetween(tomorrow, weekEnd).map(function (u) {
+    return u.procedureType;
+  });
+  return {
+    today: problems(window.KuBi.requirementFor(typesToday)),
+    tomorrow: problems(window.KuBi.requirementFor(typesTomorrow)),
+    week: problems(window.KuBi.requirementFor(typesWeek)),
+    reorder: window.KuBi.reorderList()
   };
 };
 
@@ -39208,7 +39415,7 @@ window.KuBi.misClinicAreas = function (ctx) {
   });
   // Low stock warns but doesn't block — surface it so it isn't invisible.
   const lowStock = (window.KuBi.MATERIALS || []).filter(function (m) {
-    return m.state === 'low';
+    return window.KuBi.materialState(m) !== 'ok';
   });
   out.push({
     area: 'inventory',
@@ -40831,7 +41038,45 @@ window.KuBi.Clinic = function Clinic({
     }, a.patient), /*#__PURE__*/React.createElement("span", {
       className: "inv-detail"
     }, parts.length ? parts.join(' · ') : t('inv.allAvailable', lang)));
-  }))) : null, /*#__PURE__*/React.createElement("div", {
+  })), function () {
+    const outlook = window.KuBi.supplyOutlook(appointments);
+    const period = function (labelKey, rows) {
+      return /*#__PURE__*/React.createElement("div", {
+        className: "inv-period"
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "inv-period-label"
+      }, t(labelKey, lang)), rows.length === 0 ? /*#__PURE__*/React.createElement("span", {
+        className: "inv-period-ok"
+      }, "\uD83D\uDFE2 ", t('inv.allReady', lang)) : /*#__PURE__*/React.createElement("span", {
+        className: "inv-period-rows"
+      }, rows.map(function (r) {
+        return /*#__PURE__*/React.createElement("span", {
+          key: r.material.id,
+          className: 'inv-period-row inv-' + r.state
+        }, r.state === 'out' ? '🔴 ' : '🟠 ', pick(r.material.name, lang), " \u2014 ", t(r.state === 'out' ? 'inv.notAvailable' : 'inv.isLow', lang), /*#__PURE__*/React.createElement("span", {
+          className: "inv-period-for"
+        }, " ", t('inv.forTreatments', lang), " ", r.forTypes.join(', ')));
+      })));
+    };
+    return /*#__PURE__*/React.createElement("div", {
+      className: "inv-outlook"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "card-title"
+    }, t('inv.outlook', lang)), period('inv.today', outlook.today), period('inv.tomorrow', outlook.tomorrow), period('inv.thisWeek', outlook.week), /*#__PURE__*/React.createElement("div", {
+      className: "inv-reorder"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "inv-period-label"
+    }, t('inv.reorder', lang)), outlook.reorder.length === 0 ? /*#__PURE__*/React.createElement("span", {
+      className: "inv-period-ok"
+    }, t('inv.reorderNone', lang)) : /*#__PURE__*/React.createElement("span", {
+      className: "inv-period-rows"
+    }, outlook.reorder.map(function (m) {
+      return /*#__PURE__*/React.createElement("span", {
+        key: m.id,
+        className: "inv-period-row"
+      }, pick(m.name, lang));
+    }))));
+  }()) : null, /*#__PURE__*/React.createElement("div", {
     className: "view-toggle sub-tab-row"
   }, /*#__PURE__*/React.createElement("button", {
     className: 'toggle-btn' + (view === 'mine' ? ' toggle-btn-active' : ''),
@@ -41100,9 +41345,9 @@ window.KuBi.Patients = function Patients({
       }, t('case.needs', lang)), row(t('case.materials', lang), tpl.materials.length ? tpl.materials.map(function (m) {
         return m.name[lang] || m.name.en;
       }).join(', ') : t('case.none', lang), tpl.materials.some(function (m) {
-        return m.state === 'out';
+        return window.KuBi.materialState(m) === 'out';
       }) ? 'bad' : tpl.materials.some(function (m) {
-        return m.state === 'low';
+        return window.KuBi.materialState(m) === 'low';
       }) ? 'warn' : 'good'), function () {
         // A treatment that needs a lab with nothing recorded is a
         // different problem from work that is simply not back yet,

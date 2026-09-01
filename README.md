@@ -13,7 +13,7 @@ React is bundled in.
 ```bash
 npm install
 npm run build     # compiles src/ -> KuBi.html
-npm test          # builds, then runs 231 journey checks + 7 bundle checks
+npm test          # builds, then runs 244 journey checks + 7 bundle checks
 ```
 
 `KuBi.html` is generated. Edit `src/`, never the bundle.
@@ -260,6 +260,35 @@ every time KuBi learns to notice something new.
 **After changing HEADERS, re-deploy the script as a NEW VERSION.** Until
 then the extra fields are simply dropped, which is safe but means the days
 filed in between carry no kinds.
+
+## Inventory intelligence
+
+    Today / tomorrow / minimum / reorder
+
+Materials carry a quantity and a minimum. **State is derived** — a hand-set
+state and a quantity are two facts that will disagree. At or below the
+minimum is LOW, nothing left is NOT AVAILABLE, anything else is READY.
+
+**Staff never see the numbers.** The clinic view is READY / LOW / NOT
+AVAILABLE, which is all that changes what somebody does. The quantities
+exist so KuBi can work out what tomorrow needs and what to reorder.
+
+`UPCOMING` is the booked diary beyond today — KuBi previously knew about no
+day but this one. In a connected setup it comes from Clinical Suite; an
+empty list is valid, since a clinic with nothing booked is not an error.
+
+`supplyOutlook()` returns today, tomorrow, the rest of the week and the
+reorder list. **Only problems are listed for the three periods** — a list of
+everything that is fine is a list nobody reads. A material two treatments
+need appears once: staff reorder gauze once, however many treatments want
+it.
+
+Something below minimum that nothing booked needs belongs on the reorder
+list and nowhere else. It is not stopping any work, and saying so would
+train people to ignore the ones that are.
+
+**⚠ The quantities and minimums need the clinic's own figures.** They
+reproduce the states the app already showed; they are not a stock count.
 
 ## Two rules that hold the design together
 

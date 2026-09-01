@@ -114,7 +114,7 @@ window.KuBi.misClinicAreas = function (ctx) {
     return !window.KuBi.procedureSupplyStatus(a.procedureType, a).ok;
   });
   // Low stock warns but doesn't block — surface it so it isn't invisible.
-  const lowStock = (window.KuBi.MATERIALS || []).filter(function (m) { return m.state === 'low'; });
+  const lowStock = (window.KuBi.MATERIALS || []).filter(function (m) { return window.KuBi.materialState(m) !== 'ok'; });
   out.push({ area: 'inventory', ok: shortages.length === 0, count: shortages.length, warn: lowStock.length });
 
   // Housekeeping sections are the non-per-room readiness sections owned

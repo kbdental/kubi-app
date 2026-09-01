@@ -1124,6 +1124,50 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
         K.MIS_RATE_FIELDS.indexOf('casesOpen') !== -1 &&
         K.MIS_COUNT_FIELDS.indexOf('casesOpen') === -1);
 
+  // 39. INVENTORY INTELLIGENCE — today / tomorrow / minimum / reorder.
+  //     Stock used to be a hand-set word with no number behind it, and
+  //     KuBi knew nothing about any day but today.
+  check('Stock state is derived from the quantity, not set by hand',
+        (K.MATERIALS || []).every(m => typeof m.qty === 'number' && typeof m.min === 'number'),
+        K.MATERIALS.length + ' materials');
+  check('Below the minimum is LOW',
+        K.materialState({ qty: 6, min: 10 }) === 'low' &&
+        K.materialState({ qty: 10, min: 10 }) === 'low');
+  check('Nothing left is NOT AVAILABLE', K.materialState({ qty: 0, min: 5 }) === 'out');
+  check('Above the minimum is READY', K.materialState({ qty: 11, min: 10 }) === 'ok');
+  check('Unmeasured stock still answers', K.materialState({}) === 'ok');
+
+  check('Reorder is everything at or below its minimum',
+        K.reorderList().every(m => K.materialState(m) !== 'ok') &&
+        K.reorderList().length === K.MATERIALS.filter(m => K.materialState(m) !== 'ok').length,
+        K.reorderList().map(m => m.name.en).join(', '));
+
+  // The forward view: KuBi now knows what is booked beyond today.
+  const tmr = K.operatingDate(new Date(Date.now() + 86400000));
+  check('KuBi knows what is booked tomorrow', K.bookedBetween(tmr, tmr).length > 0,
+        K.bookedBetween(tmr, tmr).map(u => u.procedureType).join(', '));
+
+  const outlook = K.supplyOutlook(K.APPOINTMENTS_TODAY);
+  check('The outlook covers today, tomorrow and the week',
+        !!outlook.today && !!outlook.tomorrow && !!outlook.week && !!outlook.reorder);
+  check('Only problems are listed, never a wall of fine',
+        outlook.today.concat(outlook.tomorrow, outlook.week).every(r => r.state !== 'ok'));
+  check('A material needed by two treatments is listed once',
+        outlook.week.every((r, i, all) => all.findIndex(x => x.material.id === r.material.id) === i));
+  check('Worst first', outlook.week.every((r, i, all) =>
+        i === 0 || !(all[i - 1].state === 'low' && r.state === 'out')));
+  check('It says which treatments need it',
+        outlook.today.every(r => Array.isArray(r.forTypes) && r.forTypes.length > 0),
+        outlook.today.map(r => r.material.name.en + ' for ' + r.forTypes.join('/')).join('; ') || 'nothing short today');
+
+  // Something below minimum that nothing booked needs belongs on the
+  // reorder list and nowhere else — it is not stopping any work.
+  const gauzeShort = K.materialState(K.materialById('gauze')) !== 'ok';
+  check('Short stock nothing needs is reorder-only, not an alarm',
+        !gauzeShort || (K.reorderList().some(m => m.id === 'gauze') &&
+                        !outlook.today.some(r => r.material.id === 'gauze')),
+        'gauze is short but nothing booked today uses it');
+
   // SUMMARY
   await step(() => {}, 150);
   const failed = results.filter(r => !r.pass);

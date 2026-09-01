@@ -399,6 +399,57 @@ window.KuBi.Clinic = function Clinic({ currentUser, lang, checked, onToggle, cli
                   );
                 })}
               </ul>
+
+              {/* What is coming. Staff see READY / LOW / NOT AVAILABLE and
+                  nothing else — the quantities behind these exist so KuBi
+                  can work this out, not to be read off a screen mid-clinic.
+                  Only problems are listed: a list of everything that is
+                  fine is a list nobody reads. */}
+              {(function () {
+                const outlook = window.KuBi.supplyOutlook(appointments);
+                const period = function (labelKey, rows) {
+                  return (
+                    <div className="inv-period">
+                      <span className="inv-period-label">{t(labelKey, lang)}</span>
+                      {rows.length === 0 ? (
+                        <span className="inv-period-ok">🟢 {t('inv.allReady', lang)}</span>
+                      ) : (
+                        <span className="inv-period-rows">
+                          {rows.map(function (r) {
+                            return (
+                              <span key={r.material.id} className={'inv-period-row inv-' + r.state}>
+                                {r.state === 'out' ? '🔴 ' : '🟠 '}
+                                {pick(r.material.name, lang)} — {t(r.state === 'out' ? 'inv.notAvailable' : 'inv.isLow', lang)}
+                                <span className="inv-period-for"> {t('inv.forTreatments', lang)} {r.forTypes.join(', ')}</span>
+                              </span>
+                            );
+                          })}
+                        </span>
+                      )}
+                    </div>
+                  );
+                };
+                return (
+                  <div className="inv-outlook">
+                    <div className="card-title">{t('inv.outlook', lang)}</div>
+                    {period('inv.today', outlook.today)}
+                    {period('inv.tomorrow', outlook.tomorrow)}
+                    {period('inv.thisWeek', outlook.week)}
+                    <div className="inv-reorder">
+                      <span className="inv-period-label">{t('inv.reorder', lang)}</span>
+                      {outlook.reorder.length === 0 ? (
+                        <span className="inv-period-ok">{t('inv.reorderNone', lang)}</span>
+                      ) : (
+                        <span className="inv-period-rows">
+                          {outlook.reorder.map(function (m) {
+                            return <span key={m.id} className="inv-period-row">{pick(m.name, lang)}</span>;
+                          })}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           ) : null}
 

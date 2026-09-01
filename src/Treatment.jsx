@@ -133,7 +133,7 @@ window.KuBi.Treatment = function Treatment({ lang, appointments, checked, onTogg
                 {!showingAfter ? (
                   <React.Fragment>
                     {(function () {
-                      const sup = window.KuBi.procedureSupplyStatus(a.procedureType, a.id);
+                      const sup = window.KuBi.procedureSupplyStatus(a.procedureType, a);
                       if (sup.ok && !sup.low.length) return null;
                       return (
                         <div className={'supply-line ' + (sup.ok ? 'supply-warn' : 'supply-block')}>

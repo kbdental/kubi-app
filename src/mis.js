@@ -111,7 +111,7 @@ window.KuBi.misClinicAreas = function (ctx) {
   out.push({ area: 'sterilization', ok: st.pending === 0, count: st.pending });
 
   const shortages = appts.filter(function (a) {
-    return !window.KuBi.procedureSupplyStatus(a.procedureType, a.id).ok;
+    return !window.KuBi.procedureSupplyStatus(a.procedureType, a).ok;
   });
   // Low stock warns but doesn't block — surface it so it isn't invisible.
   const lowStock = (window.KuBi.MATERIALS || []).filter(function (m) { return m.state === 'low'; });

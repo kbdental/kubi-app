@@ -551,7 +551,7 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   check('Lab cases carry a promised date', cases.every(c => !!c.due), cases.length + ' cases');
   check('A late case is one still awaited past its date',
         cases.filter(labLate).every(c => !c.received && c.due < K.operatingDate()));
-  const lateIds = cases.filter(labLate).map(c => c.apptId);
+  const lateIds = cases.filter(labLate).map(c => c.id);
   check('Late cases reach the attention list',
         K.computeAttentionItems([], {}, {}, openClinic, {}, {}, {}, [], {})
          .filter(i => i.kind === 'labLate').length === lateIds.length,
@@ -560,9 +560,14 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
     const cleared = { };
     cleared[lateIds[0]] = true;
     check('Marking received stops it being late',
-          !K.labCases(cleared).find(c => c.apptId === lateIds[0] && labLate(c)));
+          !K.labCases(cleared).find(c => c.id === lateIds[0] && labLate(c)));
+    // The supply check is asked about an APPOINTMENT now, because the lab
+    // question is about that patient's case, not about today's booking.
+    const lateCase = K.labCases({}).find(c => c.id === lateIds[0]);
+    const visit = { id: 'ANY', procedureType: 'Crown', caseId: lateCase.caseId };
     check('Supply check agrees with the lab screen',
-          K.procedureSupplyStatus('Crown', lateIds[0], cleared).labMissing === false);
+          K.procedureSupplyStatus('Crown', visit, cleared).labMissing === false &&
+          K.procedureSupplyStatus('Crown', visit, {}).labMissing === true);
   }
 
   // 27. LAPSED — derived from the last visit, never stored.
@@ -948,6 +953,51 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   // An unknown kind must still name somebody rather than nobody.
   check('An exception with no chain keeps its owner',
         K.exceptionEscalation({ kind: 'somethingNew', owner: 'clinic_manager' }).owner === 'clinic_manager');
+
+  // 35. LAB — case, expected, received, readiness.
+  //     Lab work used to be keyed by the APPOINTMENT that sent it. A crown
+  //     is sent at the preparation visit and needed at the fitting, which
+  //     is a different appointment, so readiness looked under the wrong
+  //     visit and reported a fitting as ready while the crown was still at
+  //     the lab. That is the bug this section exists to keep fixed.
+  const returnVisit = { id: 'LATER', patient: 'Vikram Shah', chair: 2, status: 'in_chair',
+                        procedureType: 'Crown', time: '11:00', caseId: 'VS0221-CROWN_SINGLE-01' };
+  const stillOut = K.procedureSupplyStatus('Crown', returnVisit, {});
+  check('Lab work is found by case, not by the visit that sent it',
+        stillOut.labMissing === true && stillOut.ok === false,
+        stillOut.lab ? stillOut.lab.id + ' due ' + stillOut.lab.due : 'not found');
+  check('The awaited item is named', !!stillOut.lab && stillOut.lab.item.en === 'Crown');
+  check('Receiving it unblocks the treatment',
+        K.procedureSupplyStatus('Crown', returnVisit, { L3: true }).ok === true);
+
+  // A case can have more than one thing out at the lab.
+  check('Every lab item on a case is considered',
+        K.labForCase('VS0221-CROWN_SINGLE-01', {}).length >= 1 &&
+        K.procedureSupplyStatus('Crown', returnVisit, {}).labItems.length ===
+        K.labForCase('VS0221-CROWN_SINGLE-01', {}).length);
+
+  // Expected: the template knows which treatments involve a lab at all.
+  const bridgeNoRecord = { id: 'X1', procedureType: 'Bridge', caseId: 'NOT-A-CASE' };
+  const fillingVisit = { id: 'X2', procedureType: 'Filling', caseId: 'NOT-A-CASE' };
+  check('A treatment that needs a lab is known to need one',
+        K.procedureSupplyStatus('Bridge', bridgeNoRecord, {}).labExpected === true &&
+        K.procedureSupplyStatus('Filling', fillingVisit, {}).labExpected === false);
+  check('Expecting a lab with nothing recorded is its own problem',
+        K.procedureSupplyStatus('Bridge', bridgeNoRecord, {}).labUnrecorded === true);
+  check('...and is not confused with work simply not back yet',
+        K.procedureSupplyStatus('Crown', returnVisit, {}).labUnrecorded === false &&
+        K.procedureSupplyStatus('Crown', returnVisit, {}).labMissing === true);
+  check('A filling is never waiting on a lab',
+        K.procedureSupplyStatus('Filling', fillingVisit, {}).labUnrecorded === false);
+
+  // A one-off visit with no case still finds work booked against it.
+  check('A visit with no case falls back to its own booking',
+        K.labForAppointment({ id: 'A2' }, {}).length === 0 ||
+        K.labForAppointment({ id: 'A2' }, {}).every(l => l.apptId === 'A2'));
+
+  check('Received lab work records when it arrived',
+        K.labCases({}).filter(l => l.received).every(l => !!l.receivedOn),
+        K.labCases({}).filter(l => l.received).length + ' received');
 
   // SUMMARY
   await step(() => {}, 150);

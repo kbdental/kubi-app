@@ -134,8 +134,14 @@ window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setS
                      : t('case.none', lang),
                    tpl.materials.some(function (m) { return m.state === 'out'; }) ? 'bad'
                      : tpl.materials.some(function (m) { return m.state === 'low'; }) ? 'warn' : 'good')}
-              {row(t('case.labWork', lang),
-                   tpl.needsLab ? t('case.labNeeded', lang) : t('case.labNotNeeded', lang), null)}
+              {(function () {
+                // A treatment that needs a lab with nothing recorded is a
+                // different problem from work that is simply not back yet,
+                // and the case should say which.
+                if (!tpl.needsLab) return row(t('case.labWork', lang), t('case.labNotNeeded', lang), null);
+                if (!thread.lab.length) return row(t('case.labWork', lang), t('case.labUnrecorded', lang), 'bad');
+                return row(t('case.labWork', lang), t('case.labNeeded', lang), null);
+              })()}
             </div>
           );
         })()}
@@ -297,7 +303,7 @@ window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setS
                   const late = window.KuBi.labIsLate(c);
                   const today = window.KuBi.labIsDueToday(c);
                   return (
-                    <li key={c.apptId} className={'fu-row' + (late ? ' fu-overdue' : '')}>
+                    <li key={c.id} className={'fu-row' + (late ? ' fu-overdue' : '')}>
                       <span className="fu-dot">{c.received ? '🟢' : late ? '🔴' : '🟡'}</span>
                       {c.caseId && window.KuBi.caseById(c.caseId) ? (
                         <button className="link-btn fu-patient case-link"
@@ -313,7 +319,7 @@ window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setS
                           : t('lab.due', lang) + ' ' + c.due}
                       </span>
                       {!c.received ? (
-                        <button className="rowbtn" onClick={function () { onLabReceived(c.apptId); }}>{t('lab.markReceived', lang)}</button>
+                        <button className="rowbtn" onClick={function () { onLabReceived(c.id); }}>{t('lab.markReceived', lang)}</button>
                       ) : null}
                     </li>
                   );

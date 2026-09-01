@@ -52,34 +52,58 @@ function _labDay(offset) {
 // `received` is what blocks an appointment; `due` is what lets the case be
 // chased BEFORE the patient is sitting in the waiting room. A case with no
 // due date is not overdue — unknown is not a deadline.
+// Lab work belongs to the CASE, not to the visit that happened to send it.
+// A crown is sent at the preparation visit and needed at the fitting —
+// different appointments, one case. Keying this by appointment meant
+// readiness looked for the crown under the wrong visit and reported a
+// fitting as ready to start while the crown was still at the lab.
+//
+// `apptId` records which visit sent it, which is worth keeping; it is not
+// what anything looks it up by.
 window.KuBi.LAB_CASES = {
-  A2: { received: true,  item: s('Crown', 'क्राउन'), caseId: 'MR0184-CROWN_SINGLE-01',
-        patient: 'Meera Reddy', lab: 'Sharma Dental Lab', sent: _labDay(-6), due: _labDay(-1) },
-  A4: { received: true,  item: s('Implant prosthesis', 'इम्प्लांट प्रोस्थेसिस'), caseId: 'DN077-IMPLANT_CROWN-01',
-        patient: 'Devika Nair', lab: 'Precision Ceramics', sent: _labDay(-9), due: _labDay(0) },
-  A7: { received: false, item: s('Crown', 'क्राउन'), caseId: 'VS0221-CROWN_SINGLE-01',
-        patient: 'Vikram Shah', lab: 'Sharma Dental Lab', sent: _labDay(-8), due: _labDay(-2) },
-  A8: { received: false, item: s('Denture — try-in', 'डेन्चर — ट्राई-इन'), caseId: 'LM0455-RCT_MOLAR-01',
-        patient: 'Leela Menon', lab: 'Precision Ceramics', sent: _labDay(-3), due: _labDay(2) },
+  L1: { id: 'L1', caseId: 'MR0184-CROWN_SINGLE-01', apptId: 'A2',
+        item: s('Crown', 'क्राउन'), patient: 'Meera Reddy', lab: 'Sharma Dental Lab',
+        sent: _labDay(-6), due: _labDay(-1), received: true, receivedOn: _labDay(-1) },
+  L2: { id: 'L2', caseId: 'DN077-IMPLANT_CROWN-01', apptId: 'A4',
+        item: s('Implant prosthesis', 'इम्प्लांट प्रोस्थेसिस'), patient: 'Devika Nair', lab: 'Precision Ceramics',
+        sent: _labDay(-9), due: _labDay(0), received: true, receivedOn: _labDay(0) },
+  L3: { id: 'L3', caseId: 'VS0221-CROWN_SINGLE-01', apptId: 'A7',
+        item: s('Crown', 'क्राउन'), patient: 'Vikram Shah', lab: 'Sharma Dental Lab',
+        sent: _labDay(-8), due: _labDay(-2), received: false, receivedOn: null },
+  L4: { id: 'L4', caseId: 'LM0455-RCT_MOLAR-01', apptId: 'A8',
+        item: s('Denture — try-in', 'डेन्चर — ट्राई-इन'), patient: 'Leela Menon', lab: 'Precision Ceramics',
+        sent: _labDay(-3), due: _labDay(2), received: false, receivedOn: null },
 };
 
-// Every lab case, as a list, newest deadline last. Shaped for a screen
-// rather than for the supply check that LAB_CASES was written for.
-// Has this case arrived? The seed says what was true when the day loaded;
-// `received` (held by the app) says what the clinic has ticked since. One
-// answer, used by the Lab screen and the supply check alike.
-window.KuBi.labArrived = function (apptId, received) {
-  const c = window.KuBi.LAB_CASES[apptId];
-  if (!c) return true;
-  if (received && Object.prototype.hasOwnProperty.call(received, apptId)) return !!received[apptId];
-  return !!c.received;
+/** Has this piece of lab work arrived? The seed, unless the clinic has
+ *  since ticked it. One answer, used by every screen and by readiness. */
+window.KuBi.labArrived = function (labId, received) {
+  const l = window.KuBi.LAB_CASES[labId];
+  if (!l) return true;
+  if (received && Object.prototype.hasOwnProperty.call(received, labId)) return !!received[labId];
+  return !!l.received;
 };
 
+/** Every piece of lab work, soonest promise first. */
 window.KuBi.labCases = function (received) {
-  return Object.keys(window.KuBi.LAB_CASES).map(function (apptId) {
-    const c = window.KuBi.LAB_CASES[apptId];
-    return Object.assign({ apptId: apptId, caseId: c.caseId || null }, c, { received: window.KuBi.labArrived(apptId, received) });
+  return Object.keys(window.KuBi.LAB_CASES).map(function (id) {
+    const l = window.KuBi.LAB_CASES[id];
+    return Object.assign({}, l, { received: window.KuBi.labArrived(id, received) });
   }).sort(function (a, b) { return String(a.due || '').localeCompare(String(b.due || '')); });
+};
+
+/** The lab work for a case — the lookup that matters. */
+window.KuBi.labForCase = function (caseId, received) {
+  if (!caseId) return [];
+  return window.KuBi.labCases(received).filter(function (l) { return l.caseId === caseId; });
+};
+
+/** ...and for whoever is in the chair, via their case. */
+window.KuBi.labForAppointment = function (appt, received) {
+  if (!appt) return [];
+  if (appt.caseId) return window.KuBi.labForCase(appt.caseId, received);
+  // A one-off visit with no case can still have lab work booked to it.
+  return window.KuBi.labCases(received).filter(function (l) { return l.apptId === appt.id; });
 };
 
 // Late means: still not here, and the day it was promised has passed.
@@ -103,7 +127,13 @@ window.KuBi.materialById = function (id) {
 // Can this procedure be performed? Returns blocking (out of stock) and
 // warning (low) materials separately — low stock shouldn't stop today's
 // treatment, but it should be visible.
-window.KuBi.procedureSupplyStatus = function (procedureType, apptId, received) {
+/**
+ * Can this procedure go ahead? Materials, plus the case's lab work.
+ * Takes the APPOINTMENT rather than an id, because the lab question is
+ * "has this patient's work come back", which is a question about their
+ * case and not about today's booking.
+ */
+window.KuBi.procedureSupplyStatus = function (procedureType, appt, received) {
   const needed = window.KuBi.PROCEDURE_MATERIALS[procedureType] || [];
   const blocking = [];
   const low = [];
@@ -116,14 +146,25 @@ window.KuBi.procedureSupplyStatus = function (procedureType, apptId, received) {
   });
 
   // Lab case, where one applies to this appointment.
-  const lab = apptId ? window.KuBi.LAB_CASES[apptId] : null;
-  const labMissing = !!(lab && !window.KuBi.labArrived(apptId, received));
+  // Every piece of lab work on this case, not just one.
+  const labItems = window.KuBi.labForAppointment(appt, received);
+  const awaited = labItems.filter(function (l) { return !l.received; });
+  const labMissing = awaited.length > 0;
+
+  // The template knows whether this treatment involves a lab at all, so a
+  // procedure that needs one with nothing recorded is its own problem —
+  // not the same as one that is simply not back yet.
+  const expectsLab = !!(window.KuBi.TREATMENT_NEEDS_LAB || {})[procedureType];
+  const labUnrecorded = expectsLab && labItems.length === 0;
 
   return {
     ok: blocking.length === 0 && !labMissing,
     blocking: blocking,
     low: low,
-    lab: lab || null,
+    lab: awaited[0] || labItems[0] || null,
+    labItems: labItems,
     labMissing: labMissing,
+    labExpected: expectsLab,
+    labUnrecorded: labUnrecorded,
   };
 };

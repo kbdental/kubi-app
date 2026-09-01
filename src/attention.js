@@ -116,7 +116,7 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
   window.KuBi.labCases(labReceived).forEach(function (c) {
     if (!window.KuBi.labIsLate(c)) return;
     items.push({
-      id: 'lab-' + c.apptId, area: 'patients', subtab: 'lab',
+      id: 'lab-' + c.id, area: 'patients', subtab: 'lab',
       kind: 'labLate', patient: c.patient, item: c.item, due: c.due,
       owner: OWNER.labLate,
       // The promise was for the end of that day, so lateness starts the

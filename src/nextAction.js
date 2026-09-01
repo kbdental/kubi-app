@@ -124,11 +124,11 @@ window.KuBi.nextAction = function (ctx) {
     return a.status !== 'done' && a.status !== 'no_show' && !closed[a.id];
   });
   const blockedSupply = upcoming.find(function (a) {
-    const sup = window.KuBi.procedureSupplyStatus(a.procedureType, a.id, labReceived);
+    const sup = window.KuBi.procedureSupplyStatus(a.procedureType, a, labReceived);
     return !sup.ok;
   });
   if (blockedSupply) {
-    const sup = window.KuBi.procedureSupplyStatus(blockedSupply.procedureType, blockedSupply.id, labReceived);
+    const sup = window.KuBi.procedureSupplyStatus(blockedSupply.procedureType, blockedSupply, labReceived);
     return {
       kind: 'supplyMissing', appt: blockedSupply,
       missing: sup.blocking.map(function (m) { return m.name; }),

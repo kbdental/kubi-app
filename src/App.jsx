@@ -285,10 +285,13 @@ function Shell({ user, onLogout, lang, setLang, day }) {
 
   // Repairs live until somebody fixes them, so raising one appends and
   // fixing one stamps it — neither ever removes the record.
-  function markLabReceived(apptId) {
+  // Keyed by the lab item, not by the visit that sent it — a crown sent at
+  // the preparation visit is received before the fitting, which is a
+  // different appointment entirely.
+  function markLabReceived(labId) {
     setLabReceived(function (prev) {
       const next = Object.assign({}, prev);
-      next[apptId] = true;
+      next[labId] = true;
       return next;
     });
   }

@@ -813,7 +813,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 01 Sept 2026, 03:55 pm';
+  window.KuBi.BUILD_STAMP = 'Build: 01 Sept 2026, 04:13 pm';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -34336,6 +34336,10 @@ window.KuBi.STRINGS = {
     en: 'No',
     hi: 'नहीं'
   },
+  'case.labUnrecorded': {
+    en: 'Expected, nothing recorded',
+    hi: 'ज़रूरी है, पर दर्ज नहीं'
+  },
   'timeline.title': {
     en: 'Case timeline',
     hi: 'केस टाइमलाइन'
@@ -37422,7 +37426,7 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
   window.KuBi.labCases(labReceived).forEach(function (c) {
     if (!window.KuBi.labIsLate(c)) return;
     items.push({
-      id: 'lab-' + c.apptId,
+      id: 'lab-' + c.id,
       area: 'patients',
       subtab: 'lab',
       kind: 'labLate',
@@ -37828,67 +37832,101 @@ function _labDay(offset) {
 // `received` is what blocks an appointment; `due` is what lets the case be
 // chased BEFORE the patient is sitting in the waiting room. A case with no
 // due date is not overdue — unknown is not a deadline.
+// Lab work belongs to the CASE, not to the visit that happened to send it.
+// A crown is sent at the preparation visit and needed at the fitting —
+// different appointments, one case. Keying this by appointment meant
+// readiness looked for the crown under the wrong visit and reported a
+// fitting as ready to start while the crown was still at the lab.
+//
+// `apptId` records which visit sent it, which is worth keeping; it is not
+// what anything looks it up by.
 window.KuBi.LAB_CASES = {
-  A2: {
-    received: true,
-    item: s('Crown', 'क्राउन'),
+  L1: {
+    id: 'L1',
     caseId: 'MR0184-CROWN_SINGLE-01',
+    apptId: 'A2',
+    item: s('Crown', 'क्राउन'),
     patient: 'Meera Reddy',
     lab: 'Sharma Dental Lab',
     sent: _labDay(-6),
-    due: _labDay(-1)
-  },
-  A4: {
+    due: _labDay(-1),
     received: true,
-    item: s('Implant prosthesis', 'इम्प्लांट प्रोस्थेसिस'),
+    receivedOn: _labDay(-1)
+  },
+  L2: {
+    id: 'L2',
     caseId: 'DN077-IMPLANT_CROWN-01',
+    apptId: 'A4',
+    item: s('Implant prosthesis', 'इम्प्लांट प्रोस्थेसिस'),
     patient: 'Devika Nair',
     lab: 'Precision Ceramics',
     sent: _labDay(-9),
-    due: _labDay(0)
+    due: _labDay(0),
+    received: true,
+    receivedOn: _labDay(0)
   },
-  A7: {
-    received: false,
-    item: s('Crown', 'क्राउन'),
+  L3: {
+    id: 'L3',
     caseId: 'VS0221-CROWN_SINGLE-01',
+    apptId: 'A7',
+    item: s('Crown', 'क्राउन'),
     patient: 'Vikram Shah',
     lab: 'Sharma Dental Lab',
     sent: _labDay(-8),
-    due: _labDay(-2)
-  },
-  A8: {
+    due: _labDay(-2),
     received: false,
-    item: s('Denture — try-in', 'डेन्चर — ट्राई-इन'),
+    receivedOn: null
+  },
+  L4: {
+    id: 'L4',
     caseId: 'LM0455-RCT_MOLAR-01',
+    apptId: 'A8',
+    item: s('Denture — try-in', 'डेन्चर — ट्राई-इन'),
     patient: 'Leela Menon',
     lab: 'Precision Ceramics',
     sent: _labDay(-3),
-    due: _labDay(2)
+    due: _labDay(2),
+    received: false,
+    receivedOn: null
   }
 };
 
-// Every lab case, as a list, newest deadline last. Shaped for a screen
-// rather than for the supply check that LAB_CASES was written for.
-// Has this case arrived? The seed says what was true when the day loaded;
-// `received` (held by the app) says what the clinic has ticked since. One
-// answer, used by the Lab screen and the supply check alike.
-window.KuBi.labArrived = function (apptId, received) {
-  const c = window.KuBi.LAB_CASES[apptId];
-  if (!c) return true;
-  if (received && Object.prototype.hasOwnProperty.call(received, apptId)) return !!received[apptId];
-  return !!c.received;
+/** Has this piece of lab work arrived? The seed, unless the clinic has
+ *  since ticked it. One answer, used by every screen and by readiness. */
+window.KuBi.labArrived = function (labId, received) {
+  const l = window.KuBi.LAB_CASES[labId];
+  if (!l) return true;
+  if (received && Object.prototype.hasOwnProperty.call(received, labId)) return !!received[labId];
+  return !!l.received;
 };
+
+/** Every piece of lab work, soonest promise first. */
 window.KuBi.labCases = function (received) {
-  return Object.keys(window.KuBi.LAB_CASES).map(function (apptId) {
-    const c = window.KuBi.LAB_CASES[apptId];
-    return Object.assign({
-      apptId: apptId,
-      caseId: c.caseId || null
-    }, c, {
-      received: window.KuBi.labArrived(apptId, received)
+  return Object.keys(window.KuBi.LAB_CASES).map(function (id) {
+    const l = window.KuBi.LAB_CASES[id];
+    return Object.assign({}, l, {
+      received: window.KuBi.labArrived(id, received)
     });
   }).sort(function (a, b) {
     return String(a.due || '').localeCompare(String(b.due || ''));
+  });
+};
+
+/** The lab work for a case — the lookup that matters. */
+window.KuBi.labForCase = function (caseId, received) {
+  if (!caseId) return [];
+  return window.KuBi.labCases(received).filter(function (l) {
+    return l.caseId === caseId;
+  });
+};
+
+/** ...and for whoever is in the chair, via their case. */
+window.KuBi.labForAppointment = function (appt, received) {
+  if (!appt) return [];
+  if (appt.caseId) return window.KuBi.labForCase(appt.caseId, received);
+  // A one-off visit with no case can still have lab work booked to it.
+  return window.KuBi.labCases(received).filter(function (l) {
+    return l.apptId === appt.id;
   });
 };
 
@@ -37914,7 +37952,13 @@ window.KuBi.materialById = function (id) {
 // Can this procedure be performed? Returns blocking (out of stock) and
 // warning (low) materials separately — low stock shouldn't stop today's
 // treatment, but it should be visible.
-window.KuBi.procedureSupplyStatus = function (procedureType, apptId, received) {
+/**
+ * Can this procedure go ahead? Materials, plus the case's lab work.
+ * Takes the APPOINTMENT rather than an id, because the lab question is
+ * "has this patient's work come back", which is a question about their
+ * case and not about today's booking.
+ */
+window.KuBi.procedureSupplyStatus = function (procedureType, appt, received) {
   const needed = window.KuBi.PROCEDURE_MATERIALS[procedureType] || [];
   const blocking = [];
   const low = [];
@@ -37925,14 +37969,27 @@ window.KuBi.procedureSupplyStatus = function (procedureType, apptId, received) {
   });
 
   // Lab case, where one applies to this appointment.
-  const lab = apptId ? window.KuBi.LAB_CASES[apptId] : null;
-  const labMissing = !!(lab && !window.KuBi.labArrived(apptId, received));
+  // Every piece of lab work on this case, not just one.
+  const labItems = window.KuBi.labForAppointment(appt, received);
+  const awaited = labItems.filter(function (l) {
+    return !l.received;
+  });
+  const labMissing = awaited.length > 0;
+
+  // The template knows whether this treatment involves a lab at all, so a
+  // procedure that needs one with nothing recorded is its own problem —
+  // not the same as one that is simply not back yet.
+  const expectsLab = !!(window.KuBi.TREATMENT_NEEDS_LAB || {})[procedureType];
+  const labUnrecorded = expectsLab && labItems.length === 0;
   return {
     ok: blocking.length === 0 && !labMissing,
     blocking: blocking,
     low: low,
-    lab: lab || null,
-    labMissing: labMissing
+    lab: awaited[0] || labItems[0] || null,
+    labItems: labItems,
+    labMissing: labMissing,
+    labExpected: expectsLab,
+    labUnrecorded: labUnrecorded
   };
 };
 
@@ -38404,10 +38461,7 @@ window.KuBi.caseProgress = function (caseId, appointments, lang) {
 
 /** The lab work for this case, whichever appointment it was booked under. */
 window.KuBi.caseLab = function (caseId, labReceived) {
-  const cases = window.KuBi.labCases(labReceived);
-  return cases.filter(function (c) {
-    return c.caseId === caseId;
-  });
+  return window.KuBi.labForCase(caseId, labReceived);
 };
 window.KuBi.caseFollowUp = function (caseId) {
   return (window.KuBi.FOLLOW_UPS || []).find(function (f) {
@@ -38724,11 +38778,11 @@ window.KuBi.nextAction = function (ctx) {
     return a.status !== 'done' && a.status !== 'no_show' && !closed[a.id];
   });
   const blockedSupply = upcoming.find(function (a) {
-    const sup = window.KuBi.procedureSupplyStatus(a.procedureType, a.id, labReceived);
+    const sup = window.KuBi.procedureSupplyStatus(a.procedureType, a, labReceived);
     return !sup.ok;
   });
   if (blockedSupply) {
-    const sup = window.KuBi.procedureSupplyStatus(blockedSupply.procedureType, blockedSupply.id, labReceived);
+    const sup = window.KuBi.procedureSupplyStatus(blockedSupply.procedureType, blockedSupply, labReceived);
     return {
       kind: 'supplyMissing',
       appt: blockedSupply,
@@ -39031,7 +39085,7 @@ window.KuBi.misClinicAreas = function (ctx) {
     count: st.pending
   });
   const shortages = appts.filter(function (a) {
-    return !window.KuBi.procedureSupplyStatus(a.procedureType, a.id).ok;
+    return !window.KuBi.procedureSupplyStatus(a.procedureType, a).ok;
   });
   // Low stock warns but doesn't block — surface it so it isn't invisible.
   const lowStock = (window.KuBi.MATERIALS || []).filter(function (m) {
@@ -40590,7 +40644,7 @@ window.KuBi.Clinic = function Clinic({
   }, (appointments || []).slice().sort(function (a, b) {
     return a.time.localeCompare(b.time);
   }).map(function (a) {
-    const sup = window.KuBi.procedureSupplyStatus(a.procedureType, a.id);
+    const sup = window.KuBi.procedureSupplyStatus(a.procedureType, a);
     const parts = [];
     if (sup.blocking.length) parts.push(sup.blocking.map(function (m) {
       return pick(m.name, lang) + ' — ' + t('inv.out', lang);
@@ -40884,7 +40938,14 @@ window.KuBi.Patients = function Patients({
         return m.state === 'out';
       }) ? 'bad' : tpl.materials.some(function (m) {
         return m.state === 'low';
-      }) ? 'warn' : 'good'), row(t('case.labWork', lang), tpl.needsLab ? t('case.labNeeded', lang) : t('case.labNotNeeded', lang), null));
+      }) ? 'warn' : 'good'), function () {
+        // A treatment that needs a lab with nothing recorded is a
+        // different problem from work that is simply not back yet,
+        // and the case should say which.
+        if (!tpl.needsLab) return row(t('case.labWork', lang), t('case.labNotNeeded', lang), null);
+        if (!thread.lab.length) return row(t('case.labWork', lang), t('case.labUnrecorded', lang), 'bad');
+        return row(t('case.labWork', lang), t('case.labNeeded', lang), null);
+      }());
     }(), /*#__PURE__*/React.createElement("div", {
       className: "case-status-block case-timeline-block"
     }, /*#__PURE__*/React.createElement("div", {
@@ -41035,7 +41096,7 @@ window.KuBi.Patients = function Patients({
       const late = window.KuBi.labIsLate(c);
       const today = window.KuBi.labIsDueToday(c);
       return /*#__PURE__*/React.createElement("li", {
-        key: c.apptId,
+        key: c.id,
         className: 'fu-row' + (late ? ' fu-overdue' : '')
       }, /*#__PURE__*/React.createElement("span", {
         className: "fu-dot"
@@ -41053,7 +41114,7 @@ window.KuBi.Patients = function Patients({
       }, c.received ? t('lab.received', lang) : late ? t('lab.late', lang) + ' · ' + t('lab.due', lang) + ' ' + c.due : today ? t('lab.dueToday', lang) : t('lab.due', lang) + ' ' + c.due), !c.received ? /*#__PURE__*/React.createElement("button", {
         className: "rowbtn",
         onClick: function () {
-          onLabReceived(c.apptId);
+          onLabReceived(c.id);
         }
       }, t('lab.markReceived', lang)) : null);
     })));
@@ -41441,7 +41502,7 @@ window.KuBi.Treatment = function Treatment({
         className: "checked-by"
       }, c ? '✓' : '❌'));
     })), !showingAfter ? /*#__PURE__*/React.createElement(React.Fragment, null, function () {
-      const sup = window.KuBi.procedureSupplyStatus(a.procedureType, a.id);
+      const sup = window.KuBi.procedureSupplyStatus(a.procedureType, a);
       if (sup.ok && !sup.low.length) return null;
       return /*#__PURE__*/React.createElement("div", {
         className: 'supply-line ' + (sup.ok ? 'supply-warn' : 'supply-block')
@@ -42643,10 +42704,13 @@ function Shell({
 
   // Repairs live until somebody fixes them, so raising one appends and
   // fixing one stamps it — neither ever removes the record.
-  function markLabReceived(apptId) {
+  // Keyed by the lab item, not by the visit that sent it — a crown sent at
+  // the preparation visit is received before the fitting, which is a
+  // different appointment entirely.
+  function markLabReceived(labId) {
     setLabReceived(function (prev) {
       const next = Object.assign({}, prev);
-      next[apptId] = true;
+      next[labId] = true;
       return next;
     });
   }

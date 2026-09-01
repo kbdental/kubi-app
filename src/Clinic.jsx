@@ -383,7 +383,7 @@ window.KuBi.Clinic = function Clinic({ currentUser, lang, checked, onToggle, cli
               <p className="module-sub">{t('inv.subtitle', lang)}</p>
               <ul className="inv-list">
                 {(appointments || []).slice().sort(function (a, b) { return a.time.localeCompare(b.time); }).map(function (a) {
-                  const sup = window.KuBi.procedureSupplyStatus(a.procedureType, a.id);
+                  const sup = window.KuBi.procedureSupplyStatus(a.procedureType, a);
                   const parts = [];
                   if (sup.blocking.length) parts.push(sup.blocking.map(function (m) { return pick(m.name, lang) + ' — ' + t('inv.out', lang); }).join(', '));
                   if (sup.labMissing) parts.push(t('inv.labPending', lang));

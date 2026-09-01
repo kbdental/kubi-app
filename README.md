@@ -13,7 +13,7 @@ React is bundled in.
 ```bash
 npm install
 npm run build     # compiles src/ -> KuBi.html
-npm test          # builds, then runs 197 journey checks + 7 bundle checks
+npm test          # builds, then runs 207 journey checks + 7 bundle checks
 ```
 
 `KuBi.html` is generated. Edit `src/`, never the bundle.
@@ -143,6 +143,30 @@ review.** They are standard sequences and reuse only materials the clinic
 already tracks — nothing invents a material the inventory does not carry —
 but they were written from the existing data, not from the clinic's own
 protocol.
+
+## Lab
+
+    Case → lab → expected → received → readiness
+
+Lab work belongs to the **case**, not to the visit that happened to send
+it. A crown is sent at the preparation visit and needed at the fitting —
+different appointments, one case.
+
+Keying it by appointment was a real bug, not an untidiness: readiness
+looked for the crown under the wrong visit and reported a fitting as READY
+to start while the crown was still at the lab. `procedureSupplyStatus` now
+takes the appointment and asks about its case.
+
+Three states, kept distinct because they need different actions:
+
+- **not expected** — this treatment does not involve a lab at all
+- **expected, nothing recorded** — the template says a lab is needed and no
+  work has been booked. Somebody forgot.
+- **awaited / late** — booked, promised by a date, not back yet
+
+`labReceived` is keyed by the lab item. A stored day written before this
+change carries the old appointment keys; they are simply ignored, and the
+item shows as awaited until ticked again.
 
 ## Exceptions and escalation
 

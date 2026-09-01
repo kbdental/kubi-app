@@ -217,8 +217,7 @@ window.KuBi.caseProgress = function (caseId, appointments, lang) {
 
 /** The lab work for this case, whichever appointment it was booked under. */
 window.KuBi.caseLab = function (caseId, labReceived) {
-  const cases = window.KuBi.labCases(labReceived);
-  return cases.filter(function (c) { return c.caseId === caseId; });
+  return window.KuBi.labForCase(caseId, labReceived);
 };
 
 window.KuBi.caseFollowUp = function (caseId) {

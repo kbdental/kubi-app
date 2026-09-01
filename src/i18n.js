@@ -58,6 +58,7 @@ window.KuBi.STRINGS = {
   'case.labWork': { en: 'Lab work', hi: 'लैब का काम' },
   'case.labNeeded': { en: 'Yes', hi: 'हां' },
   'case.labNotNeeded': { en: 'No', hi: 'नहीं' },
+  'case.labUnrecorded': { en: 'Expected, nothing recorded', hi: 'ज़रूरी है, पर दर्ज नहीं' },
   'timeline.title': { en: 'Case timeline', hi: 'केस टाइमलाइन' },
   'timeline.caseOpened': { en: 'Case opened', hi: 'केस शुरू हुआ' },
   'timeline.diagnosisConfirmed': { en: 'Diagnosis confirmed', hi: 'निदान की पुष्टि हुई' },

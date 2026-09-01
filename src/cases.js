@@ -34,24 +34,44 @@ window.KuBi.CASES = {
     caseId: 'AP0311-RCT_MOLAR-01', patient: 'Arjun Prasad',
     procedureType: 'RCT', treatment: 'Root canal, upper left 6',
     diagnosis: 'Irreversible pulpitis, 26',
+    history: [
+      { on: _caseDay(-7), kind: 'caseOpened',         by: 'Dr. Ananya Rao' },
+      { on: _caseDay(-7), kind: 'diagnosisConfirmed', by: 'Dr. Ananya Rao' },
+      { on: _caseDay(-5), kind: 'stageCompleted',     by: 'Dr. Ananya Rao', stage: 'Cleaning' },
+    ],
     stages: ['Cleaning', 'Cleaning / medication', 'Obturation', 'Restoration'],
   },
   'MR0184-CROWN_SINGLE-01': {
     caseId: 'MR0184-CROWN_SINGLE-01', patient: 'Meera Reddy',
     procedureType: 'Crown', treatment: 'Crown delivery',
     diagnosis: 'Fractured cusp, 46',
+    history: [
+      { on: _caseDay(-21), kind: 'caseOpened',         by: 'Dr. Karan Mehta' },
+      { on: _caseDay(-21), kind: 'diagnosisConfirmed', by: 'Dr. Karan Mehta' },
+      { on: _caseDay(-14), kind: 'stageCompleted',     by: 'Dr. Karan Mehta', stage: 'Preparation' },
+      { on: _caseDay(-6),  kind: 'stageCompleted',     by: 'Dr. Karan Mehta', stage: 'Try-in' },
+    ],
     stages: ['Preparation', 'Try-in', 'Final fitting'],
   },
   'KS0502-SCALING-01': {
     caseId: 'KS0502-SCALING-01', patient: 'Kabir Singh',
     procedureType: 'Scaling', treatment: 'Scaling and polish',
     diagnosis: 'Generalised gingivitis',
+    history: [
+      { on: _caseDay(0), kind: 'caseOpened',         by: 'Dr. Ananya Rao' },
+      { on: _caseDay(0), kind: 'diagnosisConfirmed', by: 'Dr. Ananya Rao' },
+    ],
     stages: ['Scaling + polishing'],
   },
   'DN077-IMPLANT_CROWN-01': {
     caseId: 'DN077-IMPLANT_CROWN-01', patient: 'Devika Nair',
     procedureType: 'Implant Prosthesis', treatment: 'Implant review',
     diagnosis: 'Missing 36, implant placed',
+    history: [
+      { on: _caseDay(-90), kind: 'caseOpened',         by: 'Dr. Karan Mehta' },
+      { on: _caseDay(-90), kind: 'diagnosisConfirmed', by: 'Dr. Karan Mehta' },
+      { on: _caseDay(-84), kind: 'stageCompleted',     by: 'Dr. Karan Mehta', stage: 'Implant placement' },
+    ],
     stages: ['Implant placement', 'Healing review', 'Scan / impression', 'Try-in', 'Fitting'],
   },
   // Open, and nobody is booked in today. These are the cases V1 could not
@@ -60,6 +80,11 @@ window.KuBi.CASES = {
     caseId: 'VS0221-CROWN_SINGLE-01', patient: 'Vikram Shah',
     procedureType: 'Crown', treatment: 'Crown, lower right 6',
     diagnosis: 'Root treated 46, needs coverage',
+    history: [
+      { on: _caseDay(-18), kind: 'caseOpened',         by: 'Dr. Karan Mehta' },
+      { on: _caseDay(-18), kind: 'diagnosisConfirmed', by: 'Dr. Karan Mehta' },
+      { on: _caseDay(-11), kind: 'stageCompleted',     by: 'Dr. Karan Mehta', stage: 'Preparation' },
+    ],
     stages: ['Preparation', 'Try-in', 'Final fitting'],
     stagesDone: ['Preparation'],
   },
@@ -67,10 +92,44 @@ window.KuBi.CASES = {
     caseId: 'LM0455-RCT_MOLAR-01', patient: 'Leela Menon',
     procedureType: 'RCT', treatment: 'Root canal, lower left 7',
     diagnosis: 'Apical periodontitis, 37',
+    history: [
+      { on: _caseDay(-40), kind: 'caseOpened',         by: 'Dr. Ananya Rao' },
+      { on: _caseDay(-40), kind: 'diagnosisConfirmed', by: 'Dr. Ananya Rao' },
+      { on: _caseDay(-33), kind: 'stageCompleted',     by: 'Dr. Ananya Rao', stage: 'Cleaning' },
+      { on: _caseDay(-26), kind: 'stageCompleted',     by: 'Dr. Ananya Rao', stage: 'Cleaning / medication' },
+      { on: _caseDay(-19), kind: 'stageCompleted',     by: 'Dr. Ananya Rao', stage: 'Obturation' },
+    ],
     stages: ['Cleaning', 'Cleaning / medication', 'Obturation', 'Restoration'],
     stagesDone: ['Cleaning', 'Cleaning / medication', 'Obturation'],
   },
 };
+
+// ---- the timeline ------------------------------------------------------
+//
+// WHAT EARNS A PLACE
+// An entry must be an operational fact with a time and an actor: the case
+// opened, a diagnosis confirmed, a stage completed, a visit started,
+// finished or written up, lab sent or received, a follow-up booked. That
+// is the whole list.
+//
+// What does NOT earn a place: individual checklist ticks (too many, and
+// they are already visible where they are ticked), and clinical detail,
+// which is the clinical record's job and not KuBi's. A timeline that
+// records everything is a log; staff read a log once and never again.
+//
+// WHERE ENTRIES COME FROM
+// Two sources, and the split is deliberate:
+//   · BEFORE today — recorded on the case. In a connected setup this comes
+//     from Clinical Suite, which owns the clinical record.
+//   · TODAY — DERIVED from live state (procedure timestamps, whether the
+//     visit is written up, lab receipt). Nothing is written to produce it,
+//     so it cannot drift from what the rest of KuBi believes.
+// A real recorded event log is the blueprint's "KuBi memory" and a bigger
+// piece; this gives the timeline without pretending to be that yet.
+
+function _caseDay(offset) {
+  return window.KuBi.operatingDate(new Date(Date.now() + offset * 86400000));
+}
 
 window.KuBi.caseById = function (caseId) {
   return (caseId && window.KuBi.CASES[caseId]) || null;
@@ -178,6 +237,61 @@ window.KuBi.caseClosure = function (caseId, ctx) {
 };
 
 /**
+ * The case's history, oldest first: what happened, when, by whom.
+ *
+ * Read-only. Recorded entries come from the case; today's are derived from
+ * live state, so they are never stale and never need writing. The last
+ * entry is the stage that has not happened yet, marked as ahead rather
+ * than dated — a timeline that ends in the past tells you nothing about
+ * what to do.
+ */
+window.KuBi.caseTimeline = function (caseId, ctx) {
+  const c = window.KuBi.caseById(caseId);
+  if (!c) return [];
+  const context = ctx || {};
+  const today = window.KuBi.operatingDate();
+  const out = (c.history || []).map(function (h) {
+    return { on: h.on, kind: h.kind, by: h.by, stage: h.stage || null };
+  });
+
+  // ---- today, derived ----
+  const appt = window.KuBi.appointmentForCase(caseId, context.appointments);
+  if (appt) {
+    const proc = (context.procedureState || {})[appt.id] || {};
+    if (proc.startedAt) {
+      out.push({ on: today, kind: 'visitStarted', by: proc.startedBy || appt.doctor || null,
+                 stage: appt.currentStageName || null });
+    }
+    if (proc.completedAt) {
+      out.push({ on: today, kind: 'visitCompleted', by: proc.startedBy || appt.doctor || null,
+                 stage: appt.currentStageName || null });
+    }
+    const closed = (context.closedCases || {})[appt.id];
+    if (closed) {
+      out.push({ on: today, kind: 'visitDocumented', by: (closed && closed.closedBy) || null,
+                 stage: appt.currentStageName || null });
+    }
+  }
+
+  // Lab movements belong to the case, whichever visit booked them.
+  window.KuBi.caseLab(caseId, context.labReceived).forEach(function (l) {
+    // The lab is where it went, not who did it — `by` would read as though
+    // the lab sent the work to itself.
+    if (l.sent) out.push({ on: l.sent, kind: 'labSent', by: null, lab: l.lab || null, stage: null, item: l.item });
+    if (l.received && l.due) out.push({ on: l.due, kind: 'labReceived', by: null, lab: l.lab || null, stage: null, item: l.item });
+  });
+
+  out.sort(function (a, b) { return String(a.on).localeCompare(String(b.on)); });
+
+  // What has not happened yet, so the timeline points forward.
+  const progress = window.KuBi.caseProgress(caseId, context.appointments);
+  if (progress.current || progress.next) {
+    out.push({ ahead: true, kind: 'nextStage', stage: progress.next || progress.current });
+  }
+  return out;
+};
+
+/**
  * The whole thread, assembled: Patient → Case → Stage → Visit → Closure.
  * One call, so a screen never has to gather this itself and no two screens
  * can gather it differently.
@@ -196,6 +310,7 @@ window.KuBi.caseThread = function (caseId, ctx) {
     today: appt,                                   // null when nobody is booked in
     progress: window.KuBi.caseProgress(caseId, context.appointments),
     lab: window.KuBi.caseLab(caseId, context.labReceived),
+    timeline: window.KuBi.caseTimeline(caseId, context),
     closure: window.KuBi.caseClosure(caseId, context),
   };
 };

@@ -804,6 +804,42 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   check('Open cases are the ones with work left', K.openCases(caseCtx).length === K.allCases().length,
         K.openCases(caseCtx).length + ' of ' + K.allCases().length);
 
+  // 32. THE CASE TIMELINE — read-only: what happened, when, by whom.
+  const tlBase = { appointments: K.APPOINTMENTS_TODAY, procedureState: {}, closedCases: {}, labReceived: {} };
+  const tl = K.caseTimeline('AP0311-RCT_MOLAR-01', tlBase);
+  check('A case has a timeline', tl.length > 0, tl.length + ' entries');
+  check('It runs oldest first',
+        tl.filter(e => !e.ahead).every((e, i, dated) => i === 0 || dated[i - 1].on <= e.on));
+  check('It opens with the case', tl[0].kind === 'caseOpened' && !!tl[0].by, tl[0].by);
+  check('It ends looking forward, not back',
+        tl[tl.length - 1].ahead === true && tl[tl.length - 1].stage === 'Obturation',
+        tl[tl.length - 1].stage);
+
+  // Today's entries are derived, so they appear the moment the work happens
+  // and never need writing.
+  const tlBefore = K.caseTimeline('AP0311-RCT_MOLAR-01', tlBase).filter(e => e.on === K.operatingDate()).length;
+  const tlAfter = K.caseTimeline('AP0311-RCT_MOLAR-01', Object.assign({}, tlBase, {
+    procedureState: { A1: { startedAt: new Date(), completedAt: new Date(), startedBy: 'Dr. Ananya Rao' } },
+    closedCases: { A1: { closedBy: 'Dr. Ananya Rao' } },
+  })).filter(e => e.on === K.operatingDate());
+  check('Doing the work adds to the timeline', tlBefore === 0 && tlAfter.length === 3,
+        tlBefore + ' -> ' + tlAfter.length + ' entries today');
+  check('...naming who did it', tlAfter.every(e => !!e.by), tlAfter.map(e => e.kind).join(', '));
+
+  // Lab movement belongs to the case, and the lab is a destination.
+  const crownTl = K.caseTimeline('MR0184-CROWN_SINGLE-01', tlBase);
+  const labEntries = crownTl.filter(e => e.kind === 'labSent' || e.kind === 'labReceived');
+  check('Lab movement is on the case timeline', labEntries.length === 2, labEntries.length + ' lab entries');
+  check('The lab is recorded as a place, not an actor',
+        labEntries.every(e => e.by === null && !!e.lab), labEntries[0] && labEntries[0].lab);
+
+  // Checklist ticks deliberately do NOT earn a place.
+  const noisy = K.caseTimeline('AP0311-RCT_MOLAR-01', Object.assign({}, tlBase, {
+    treatmentChecked: { A1: { 0: true, 1: true, 2: true, 3: true, 4: true } },
+  }));
+  check('Checklist ticks do not clutter the timeline', noisy.length === tl.length,
+        noisy.length + ' entries, unchanged');
+
   // SUMMARY
   await step(() => {}, 150);
   const failed = results.filter(r => !r.pass);

@@ -13,7 +13,7 @@ React is bundled in.
 ```bash
 npm install
 npm run build     # compiles src/ -> KuBi.html
-npm test          # builds, then runs 163 journey checks + 7 bundle checks
+npm test          # builds, then runs 172 journey checks + 7 bundle checks
 ```
 
 `KuBi.html` is generated. Edit `src/`, never the bundle.
@@ -96,6 +96,25 @@ are now distinct: **treatment done** (today's procedure finished), **visit
 documented** (V1's "case closed"), and **case closed** (every stage done and
 the last visit written up). A documented visit on a four-stage RCT does not
 close the case.
+
+### The case timeline
+
+Read-only: what happened, when, by whom. An entry must be an operational
+fact with a time and an actor — case opened, diagnosis confirmed, a stage
+completed, a visit started/finished/written up, lab sent or received.
+
+Checklist ticks and clinical detail deliberately do NOT earn a place. A
+timeline that records everything is a log, and staff read a log once.
+
+Entries before today are recorded on the case (from Clinical Suite, in a
+connected setup). Today's are DERIVED from live state, so they appear as
+the work happens and cannot drift from what the rest of KuBi believes. A
+real recorded event log — the blueprint's "KuBi memory" — is a larger
+piece; this gives the timeline without pretending to be it.
+
+The last entry is the stage that has not happened yet, marked as ahead
+rather than dated: a timeline ending in the past says nothing about what
+to do next.
 
 ## Two rules that hold the design together
 

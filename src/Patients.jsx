@@ -119,6 +119,38 @@ window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setS
                cl.caseClosed ? 'good' : null)}
         </div>
 
+        <div className="case-status-block case-timeline-block">
+          <div className="card-title">{t('timeline.title', lang)}</div>
+          <ol className="case-timeline">
+            {thread.timeline.map(function (e, i) {
+              // Read-only, and short by design: what happened, when, by whom.
+              let label = '';
+              if (e.kind === 'caseOpened' || e.kind === 'diagnosisConfirmed' || e.kind === 'visitDocumented') {
+                label = t('timeline.' + e.kind, lang);
+              } else if (e.kind === 'labSent' || e.kind === 'labReceived') {
+                label = (e.item ? (e.item[lang] || e.item.en) + ' ' : '') + t('timeline.' + e.kind, lang);
+              } else if (e.kind === 'nextStage') {
+                label = e.stage;
+              } else {
+                label = (e.stage ? e.stage + ' ' : '') + t('timeline.' + e.kind, lang);
+              }
+              return (
+                <li key={i} className={'tl-entry' + (e.ahead ? ' tl-ahead' : '') + (e.on === window.KuBi.operatingDate() ? ' tl-today' : '')}>
+                  <span className="tl-when">
+                    {e.ahead ? t('timeline.nextStage', lang)
+                             : e.on === window.KuBi.operatingDate() ? t('timeline.today', lang) : e.on}
+                  </span>
+                  <span className="tl-what">{label}</span>
+                  {/* Just the name. "by X" cannot be translated into Hindi
+                      without reordering the line, and the column already
+                      reads as who did it. */}
+                  {!e.ahead && (e.by || e.lab) ? <span className="tl-who">{e.by || e.lab}</span> : null}
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+
         <div className="case-status-block">
           {row(t('case.lab', lang),
                thread.lab.length

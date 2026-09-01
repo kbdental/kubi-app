@@ -13,7 +13,7 @@ React is bundled in.
 ```bash
 npm install
 npm run build     # compiles src/ -> KuBi.html
-npm test          # builds, then runs 172 journey checks + 7 bundle checks
+npm test          # builds, then runs 184 journey checks + 7 bundle checks
 ```
 
 `KuBi.html` is generated. Edit `src/`, never the bundle.
@@ -115,6 +115,33 @@ piece; this gives the timeline without pretending to be it.
 The last entry is the stage that has not happened yet, marked as ahead
 rather than dated: a timeline ending in the past says nothing about what
 to do next.
+
+## Treatment templates
+
+`treatmentTemplates.js` answers what a procedure BRINGS WITH IT:
+
+    Procedure → stages → before → materials / lab → after → closure
+
+Choosing "Crown" brings all of it. Staff never assemble a workflow.
+
+The module **assembles, it does not duplicate**: before, after and closure
+still live in `treatmentChecklists.js` and materials in `inventory.js`, and
+the template reads them — a check asserts it holds the same object, not a
+copy. What is new here is the two pieces that were missing: the STAGES a
+procedure runs through, and whether it NEEDS A LAB.
+
+All 28 procedure types now have stages, before, after and closure; 26 have
+materials (Consultation and TMD Assessment have none, which is correct).
+
+A case takes its stages from its procedure. A case may still carry its own
+list when the plan genuinely deviates — the seeded implant case spans the
+surgery AND the prosthesis, so it is neither procedure's standard sequence.
+
+**⚠ The stage lists and the added material mappings need a dentist's
+review.** They are standard sequences and reuse only materials the clinic
+already tracks — nothing invents a material the inventory does not carry —
+but they were written from the existing data, not from the clinic's own
+protocol.
 
 ## Two rules that hold the design together
 

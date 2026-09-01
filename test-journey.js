@@ -840,6 +840,56 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   check('Checklist ticks do not clutter the timeline', noisy.length === tl.length,
         noisy.length + ' entries, unchanged');
 
+  // 33. TREATMENT TEMPLATES — procedure -> stages -> before -> materials/lab
+  //     -> after -> closure. Staff choose the procedure; they never build
+  //     the workflow.
+  const types = K.TREATMENT_TYPES || [];
+  check('Every procedure type has a template', K.templateGaps().length === 0,
+        types.length + ' types, ' + K.templateGaps().length + ' gaps');
+  check('Every procedure type has stages',
+        types.every(ty => K.treatmentTemplate(ty).stages.length > 0));
+
+  const crown = K.treatmentTemplate('Crown');
+  check('A template carries the whole chain',
+        crown.stages.length === 3 && crown.before.length > 0 && crown.after.length > 0 &&
+        crown.materials.length > 0 && crown.closureCategories.length > 0,
+        'Crown: ' + crown.stages.join(' -> '));
+  check('A template knows when a lab is involved',
+        crown.needsLab === true && K.treatmentTemplate('Extraction').needsLab === false);
+  check('Templates read the existing checklists rather than copying them',
+        crown.before === K.TREATMENT_CHECKLISTS['Crown'] &&
+        crown.after === K.TREATMENT_CHECKLISTS_AFTER['Crown']);
+  check('Templates only use materials the clinic already tracks',
+        types.every(ty => K.treatmentTemplate(ty).materials.every(m => !!m && !!m.id)));
+
+  // A new case is created FROM its procedure.
+  const fresh = K.stagesForNewCase('RCT');
+  check('A new case starts from the procedure, not by hand',
+        fresh.length === 4 && fresh[0].current === true && fresh.every(st => !st.done),
+        fresh.map(st => st.name).join(' -> '));
+
+  // Existing cases now take their stages from the template.
+  const tplCtx = { appointments: [], procedureState: {}, closedCases: {}, labReceived: {} };
+  check('A case with no list of its own uses the template',
+        K.caseProgress('VS0221-CROWN_SINGLE-01', []).stages.map(st => st.name).join(',') ===
+        K.templateStages('Crown').join(','));
+  check('...and its recorded progress still applies',
+        K.caseProgress('VS0221-CROWN_SINGLE-01', []).completed.join(',') === 'Preparation');
+
+  // A combined plan keeps its own sequence rather than being forced.
+  const implant = K.caseProgress('DN077-IMPLANT_CROWN-01', []);
+  check('A case that deviates keeps its own stages',
+        implant.stages.length === 5 && implant.stages[0].name === 'Implant placement',
+        implant.stages.length + ' stages vs template ' + K.templateStages('Implant Prosthesis').length);
+
+  // Stage names reach Hindi, which the hand-written lists never did.
+  check('Stage names are translated',
+        K.templateStages('Crown', 'hi')[0] !== K.templateStages('Crown', 'en')[0],
+        K.templateStages('Crown', 'hi').join(' / '));
+  check('A translated case still tracks the same progress',
+        K.caseProgress('VS0221-CROWN_SINGLE-01', [], 'hi').completed.length ===
+        K.caseProgress('VS0221-CROWN_SINGLE-01', [], 'en').completed.length);
+
   // SUMMARY
   await step(() => {}, 150);
   const failed = results.filter(r => !r.pass);

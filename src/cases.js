@@ -39,7 +39,6 @@ window.KuBi.CASES = {
       { on: _caseDay(-7), kind: 'diagnosisConfirmed', by: 'Dr. Ananya Rao' },
       { on: _caseDay(-5), kind: 'stageCompleted',     by: 'Dr. Ananya Rao', stage: 'Cleaning' },
     ],
-    stages: ['Cleaning', 'Cleaning / medication', 'Obturation', 'Restoration'],
   },
   'MR0184-CROWN_SINGLE-01': {
     caseId: 'MR0184-CROWN_SINGLE-01', patient: 'Meera Reddy',
@@ -51,7 +50,6 @@ window.KuBi.CASES = {
       { on: _caseDay(-14), kind: 'stageCompleted',     by: 'Dr. Karan Mehta', stage: 'Preparation' },
       { on: _caseDay(-6),  kind: 'stageCompleted',     by: 'Dr. Karan Mehta', stage: 'Try-in' },
     ],
-    stages: ['Preparation', 'Try-in', 'Final fitting'],
   },
   'KS0502-SCALING-01': {
     caseId: 'KS0502-SCALING-01', patient: 'Kabir Singh',
@@ -61,7 +59,6 @@ window.KuBi.CASES = {
       { on: _caseDay(0), kind: 'caseOpened',         by: 'Dr. Ananya Rao' },
       { on: _caseDay(0), kind: 'diagnosisConfirmed', by: 'Dr. Ananya Rao' },
     ],
-    stages: ['Scaling + polishing'],
   },
   'DN077-IMPLANT_CROWN-01': {
     caseId: 'DN077-IMPLANT_CROWN-01', patient: 'Devika Nair',
@@ -72,6 +69,8 @@ window.KuBi.CASES = {
       { on: _caseDay(-90), kind: 'diagnosisConfirmed', by: 'Dr. Karan Mehta' },
       { on: _caseDay(-84), kind: 'stageCompleted',     by: 'Dr. Karan Mehta', stage: 'Implant placement' },
     ],
+    // Keeps its own list: this plan spans the surgery AND the prosthesis,
+    // so it is neither procedure's standard sequence.
     stages: ['Implant placement', 'Healing review', 'Scan / impression', 'Try-in', 'Fitting'],
   },
   // Open, and nobody is booked in today. These are the cases V1 could not
@@ -85,7 +84,6 @@ window.KuBi.CASES = {
       { on: _caseDay(-18), kind: 'diagnosisConfirmed', by: 'Dr. Karan Mehta' },
       { on: _caseDay(-11), kind: 'stageCompleted',     by: 'Dr. Karan Mehta', stage: 'Preparation' },
     ],
-    stages: ['Preparation', 'Try-in', 'Final fitting'],
     stagesDone: ['Preparation'],
   },
   'LM0455-RCT_MOLAR-01': {
@@ -99,7 +97,6 @@ window.KuBi.CASES = {
       { on: _caseDay(-26), kind: 'stageCompleted',     by: 'Dr. Ananya Rao', stage: 'Cleaning / medication' },
       { on: _caseDay(-19), kind: 'stageCompleted',     by: 'Dr. Ananya Rao', stage: 'Obturation' },
     ],
-    stages: ['Cleaning', 'Cleaning / medication', 'Obturation', 'Restoration'],
     stagesDone: ['Cleaning', 'Cleaning / medication', 'Obturation'],
   },
 };
@@ -157,20 +154,41 @@ window.KuBi.caseForAppointment = function (appt) {
  * one, because that is the live record staff are moving; otherwise the
  * case's own last known progress is used. Never both.
  */
-window.KuBi.caseStageList = function (caseId, appointments) {
+window.KuBi.caseStageList = function (caseId, appointments, lang) {
   const c = window.KuBi.caseById(caseId);
   if (!c) return [];
   const appt = window.KuBi.appointmentForCase(caseId, appointments);
 
+  // NAMES come from the procedure's template — that is the point of a
+  // template — unless this case carries its own list, which a combined
+  // plan legitimately does (an implant case that spans surgery AND the
+  // prosthesis is not the standard three stages of either).
+  const names = (c.stages && c.stages.length)
+    ? c.stages
+    : window.KuBi.templateStages(c.procedureType, lang);
+
+  // PROGRESS comes from today's appointment when there is one. Positions
+  // are only trusted when the two agree on how many stages there are;
+  // otherwise the appointment is the whole truth, names included, because
+  // guessing an alignment would silently mislabel someone's treatment.
   if (appt && appt.caseStages && appt.caseStages.length) {
-    return appt.caseStages.map(function (s) {
-      return { name: s.name, done: !!s.done, current: !!s.current };
+    if (names.length === appt.caseStages.length) {
+      return appt.caseStages.map(function (st, i) {
+        return { name: names[i], done: !!st.done, current: !!st.current };
+      });
+    }
+    return appt.caseStages.map(function (st) {
+      return { name: st.name, done: !!st.done, current: !!st.current };
     });
   }
+
   const done = c.stagesDone || [];
   let currentTaken = false;
-  return c.stages.map(function (name) {
-    const isDone = done.indexOf(name) !== -1;
+  return names.map(function (name, i) {
+    // stagesDone is recorded against the English name, which is the stable
+    // one; the displayed name may be translated.
+    const key = (c.stages && c.stages.length) ? name : window.KuBi.templateStages(c.procedureType)[i];
+    const isDone = done.indexOf(key) !== -1;
     const isCurrent = !isDone && !currentTaken;
     if (isCurrent) currentTaken = true;
     return { name: name, done: isDone, current: isCurrent };
@@ -178,8 +196,8 @@ window.KuBi.caseStageList = function (caseId, appointments) {
 };
 
 /** Where the case has reached: what is finished, what is now, what is next. */
-window.KuBi.caseProgress = function (caseId, appointments) {
-  const stages = window.KuBi.caseStageList(caseId, appointments);
+window.KuBi.caseProgress = function (caseId, appointments, lang) {
+  const stages = window.KuBi.caseStageList(caseId, appointments, lang);
   const completed = stages.filter(function (s) { return s.done; }).map(function (s) { return s.name; });
   const currentStage = stages.find(function (s) { return s.current; });
   const idx = currentStage ? stages.indexOf(currentStage) : -1;
@@ -284,7 +302,7 @@ window.KuBi.caseTimeline = function (caseId, ctx) {
   out.sort(function (a, b) { return String(a.on).localeCompare(String(b.on)); });
 
   // What has not happened yet, so the timeline points forward.
-  const progress = window.KuBi.caseProgress(caseId, context.appointments);
+  const progress = window.KuBi.caseProgress(caseId, context.appointments, context.lang);
   if (progress.current || progress.next) {
     out.push({ ahead: true, kind: 'nextStage', stage: progress.next || progress.current });
   }
@@ -308,7 +326,7 @@ window.KuBi.caseThread = function (caseId, ctx) {
     treatment: c.treatment,
     diagnosis: c.diagnosis,
     today: appt,                                   // null when nobody is booked in
-    progress: window.KuBi.caseProgress(caseId, context.appointments),
+    progress: window.KuBi.caseProgress(caseId, context.appointments, context.lang),
     lab: window.KuBi.caseLab(caseId, context.labReceived),
     timeline: window.KuBi.caseTimeline(caseId, context),
     closure: window.KuBi.caseClosure(caseId, context),

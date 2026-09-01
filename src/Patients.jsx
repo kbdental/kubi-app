@@ -23,6 +23,7 @@ window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setS
   const [openCaseId, setOpenCaseId] = React.useState(null);
 
   const caseCtx = {
+    lang: lang,
     appointments: appointments,
     procedureState: procedureState || {},
     closedCases: closedCases || {},
@@ -118,6 +119,26 @@ window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setS
           {row(t('case.closure', lang), cl.caseClosed ? t('case.closed', lang) : t('case.notYet', lang),
                cl.caseClosed ? 'good' : null)}
         </div>
+
+        {/* What the PROCEDURE brings, not what somebody assembled: the
+            template's materials and whether a lab is involved. */}
+        {(function () {
+          const tpl = window.KuBi.treatmentTemplate(thread.procedureType, lang);
+          if (!tpl.known) return null;
+          return (
+            <div className="case-status-block">
+              <div className="card-title">{t('case.needs', lang)}</div>
+              {row(t('case.materials', lang),
+                   tpl.materials.length
+                     ? tpl.materials.map(function (m) { return m.name[lang] || m.name.en; }).join(', ')
+                     : t('case.none', lang),
+                   tpl.materials.some(function (m) { return m.state === 'out'; }) ? 'bad'
+                     : tpl.materials.some(function (m) { return m.state === 'low'; }) ? 'warn' : 'good')}
+              {row(t('case.labWork', lang),
+                   tpl.needsLab ? t('case.labNeeded', lang) : t('case.labNotNeeded', lang), null)}
+            </div>
+          );
+        })()}
 
         <div className="case-status-block case-timeline-block">
           <div className="card-title">{t('timeline.title', lang)}</div>

@@ -13,7 +13,7 @@ React is bundled in.
 ```bash
 npm install
 npm run build     # compiles src/ -> KuBi.html
-npm test          # builds, then runs 184 journey checks + 7 bundle checks
+npm test          # builds, then runs 197 journey checks + 7 bundle checks
 ```
 
 `KuBi.html` is generated. Edit `src/`, never the bundle.
@@ -34,6 +34,7 @@ src/
   attention.js         What needs attention, with owner + reason
   equipment.js         Equipment status list
   repairs.js           Building faults, open until fixed
+  escalation.js        Who hears about a problem, and when
   sterilization.js     Instrument pack chain
   inventory.js         Materials mapped to procedures
   nextAction.js        THE PRIORITY ENGINE — one action from 8 states
@@ -142,6 +143,35 @@ review.** They are standard sequences and reuse only materials the clinic
 already tracks — nothing invents a material the inventory does not carry —
 but they were written from the existing data, not from the clinic's own
 protocol.
+
+## Exceptions and escalation
+
+    Problem → owner → action → escalation → resolution
+
+`escalation.js` holds the chains: who a problem starts with, and who hears
+about it if it stays open. Waiting too long starts with Front Desk, reaches
+the Clinic Manager after 20 minutes and the Owner after 40.
+
+**Time raised is derived, never stored.** Every exception already has a
+natural moment it began — the patient was marked waiting, the procedure was
+completed, the fault was reported, the lab date passed. A stored `raisedAt`
+would be a second copy of a fact and the first thing to go stale.
+
+For waiting, the age is of the PROBLEM, not the patient: someone waiting 30
+minutes has been an exception for 15, because 15 is the clinic's limit.
+
+**Resolution is the problem going away.** There is deliberately no flag to
+tick. An exception exists because a condition is true; when it stops being
+true the exception stops being computed. A flag would let a screen say
+resolved while the patient is still in the waiting room.
+
+`owner` on an exception is whoever holds it NOW, so every screen that
+already prints the owner shows the escalation without knowing about it.
+`raisedOwner` keeps who it started with.
+
+**⚠ The escalation times need the clinic's sign-off.** The waiting chain
+follows the blueprint's own example; the rest are proportionate to how much
+harm the delay does, which is a judgement the clinic should make.
 
 ## Two rules that hold the design together
 

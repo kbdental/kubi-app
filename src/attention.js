@@ -8,6 +8,9 @@
 
 window.KuBi = window.KuBi || {};
 
+// Waiting longer than this is an exception, per the clinic's SOP.
+const WAIT_LIMIT_MIN = 15;
+
 window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfter, readinessChecked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived, equipmentStatus) {
   const items = [];
   const now = Date.now();
@@ -45,6 +48,7 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
             area: 'clinic', subtab: 'equipment', room: room,
             kind: 'roomNotReady', room_no: room, done: rs.done, total: rs.total,
             owner: section.ownerRole || OWNER.roomNotReady,
+            raisedAt: clinicStatus.at || null,
           });
         }
       });
@@ -56,12 +60,14 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
     if (a.status === 'waiting' && a.statusAt) {
       const minutes = Math.floor((now - new Date(a.statusAt).getTime()) / 60000);
       if (minutes > 15) {
-        items.push({ id: 'wait-' + a.id, area: 'patients', apptId: a.id, kind: 'waitingTooLong', patient: a.patient, minutes: minutes, owner: OWNER.waitingTooLong });
+        items.push({ id: 'wait-' + a.id, area: 'patients', apptId: a.id, kind: 'waitingTooLong', patient: a.patient, minutes: minutes, owner: OWNER.waitingTooLong,
+                   raisedAt: new Date(new Date(a.statusAt).getTime() + WAIT_LIMIT_MIN * 60000) });
       }
     }
 
     if (a.status === 'no_show') {
-      items.push({ id: 'noshow-' + a.id, area: 'patients', apptId: a.id, kind: 'noShow', patient: a.patient, owner: OWNER.noShow });
+      items.push({ id: 'noshow-' + a.id, area: 'patients', apptId: a.id, kind: 'noShow', patient: a.patient, owner: OWNER.noShow,
+                   raisedAt: a.statusAt || null });
     }
 
     // Patient in the chair but the before-checklist isn't satisfied —
@@ -69,7 +75,8 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
     if (a.status === 'in_chair') {
       const before = window.KuBi.treatmentReadyStats(a.procedureType, beforeChecked[a.id] || {});
       if (!before.ready) {
-        items.push({ id: 'notready-' + a.id, area: 'treatment', apptId: a.id, subtab: 'before', kind: 'treatmentNotReady', patient: a.patient, missing: before.missing, owner: OWNER.treatmentNotReady });
+        items.push({ id: 'notready-' + a.id, area: 'treatment', apptId: a.id, subtab: 'before', kind: 'treatmentNotReady', patient: a.patient, missing: before.missing, owner: OWNER.treatmentNotReady,
+                     raisedAt: a.statusAt || null });
       }
     }
 
@@ -79,7 +86,8 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
     if (proc && proc.completedAt && !closed[a.id]) {
       const gate = window.KuBi.closureGate(a.procedureType, afterChecked[a.id] || {});
       if (!gate.canClose) {
-        items.push({ id: 'postop-' + a.id, area: 'treatment', apptId: a.id, subtab: 'after', kind: 'caseNotClosed', patient: a.patient, procedure: a.procedureType, owner: OWNER.caseNotClosed });
+        items.push({ id: 'postop-' + a.id, area: 'treatment', apptId: a.id, subtab: 'after', kind: 'caseNotClosed', patient: a.patient, procedure: a.procedureType, owner: OWNER.caseNotClosed,
+                     raisedAt: proc.completedAt || null });
       }
     }
   });
@@ -98,6 +106,7 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
       room: item && item.isChair ? item.room : null,
       kind: 'equipmentDown', equipItem: item, note: equip[id].note || '',
       owner: OWNER.equipmentDown,
+      raisedAt: equip[id].at || null,
     });
   });
 
@@ -110,6 +119,9 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
       id: 'lab-' + c.apptId, area: 'patients', subtab: 'lab',
       kind: 'labLate', patient: c.patient, item: c.item, due: c.due,
       owner: OWNER.labLate,
+      // The promise was for the end of that day, so lateness starts the
+      // morning after it.
+      raisedAt: new Date(c.due + 'T09:00:00'),
     });
   });
 
@@ -123,8 +135,20 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
       kind: 'repairOpen', what: r.what, place: r.place,
       days: window.KuBi.repairAgeDays(r),
       owner: OWNER.repairOpen,
+      raisedAt: r.at || null,
     });
   });
 
-  return items;
+  // Work out where each problem has got to. `owner` becomes whoever holds
+  // it NOW rather than who it started with, so every screen that already
+  // prints the owner shows the escalation without needing to know about
+  // it. The original is kept as raisedOwner for anyone who needs it.
+  return items.map(function (it) {
+    const esc = window.KuBi.exceptionEscalation(it, now);
+    return Object.assign({}, it, {
+      raisedOwner: it.owner,
+      owner: esc.owner || it.owner,
+      escalation: esc,
+    });
+  });
 };

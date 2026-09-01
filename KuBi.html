@@ -624,6 +624,13 @@
   .today-greeting { color: var(--ink-soft); font-size: 14px; margin: 2px 0 0; }
   .now-next-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; opacity: 0.75; }
 
+  .attention-escalated {
+    margin-left: 8px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--coral);
+    background: rgba(193,80,46,0.10); padding: 2px 7px; border-radius: 999px;
+  }
+  .attention-age { margin-left: 8px; font-size: 11.5px; color: var(--ink-soft); }
+
   /* ---------- Case view ---------- */
   .case-view { padding: 20px; }
   .case-back { margin-bottom: 16px; }
@@ -806,7 +813,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 01 Sept 2026, 03:26 pm';
+  window.KuBi.BUILD_STAMP = 'Build: 01 Sept 2026, 03:55 pm';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -35125,6 +35132,26 @@ window.KuBi.STRINGS = {
     en: 'more not shown',
     hi: 'और दिखाए नहीं गए'
   },
+  'attention.escalated': {
+    en: 'Escalated',
+    hi: 'ऊपर भेजा गया'
+  },
+  'attention.openFor': {
+    en: 'open',
+    hi: 'से बाकी'
+  },
+  'attention.minutesShort': {
+    en: 'min',
+    hi: 'मिनट'
+  },
+  'attention.hoursShort': {
+    en: 'h',
+    hi: 'घंटे'
+  },
+  'attention.daysShort': {
+    en: 'd',
+    hi: 'दिन'
+  },
   'attention.treatmentNotReady': {
     en: 'in chair but treatment not ready',
     hi: 'चेयर पर हैं लेकिन इलाज तैयार नहीं'
@@ -37072,6 +37099,166 @@ window.KuBi.closureGate = function (procedureType, checkedMap) {
   return result;
 };
 
+// ---- src/escalation.js ----
+// escalation.js — V2.3. What happens to a problem nobody has fixed.
+//
+//     Problem → owner → action → escalation → resolution
+//
+// V1 named an owner for every exception, which answers "whose job is
+// this". It could not answer the next two questions: how long has it been
+// waiting, and who gets told when it keeps waiting. Staff had to decide
+// for themselves whom to call, which in practice means nobody is called.
+//
+// TIME RAISED IS DERIVED, NEVER STORED.
+// Every exception already has a natural moment it began: the patient was
+// marked waiting, the procedure was completed, the fault was reported, the
+// lab date passed. attention.js reads that moment from the same state the
+// exception itself comes from. A stored raisedAt would be a second copy of
+// a fact, and the first thing to go stale after a reload.
+//
+// RESOLUTION IS THE PROBLEM GOING AWAY.
+// There is deliberately no "resolved" flag to tick. An exception exists
+// because a condition is true; when the condition stops being true the
+// exception stops being computed. A flag would let a screen say resolved
+// while the patient is still sitting in the waiting room.
+//
+// ⚠ THE TIMES BELOW ARE A STARTING POINT AND NEED THE CLINIC'S SIGN-OFF.
+//   The waiting chain follows the blueprint's own example (Front Desk,
+//   then the Clinic Manager after 20 minutes, then the Owner after 40).
+//   The rest are proportionate to how much harm the delay does, which is
+//   a judgement the clinic should make rather than accept.
+
+window.KuBi = window.KuBi || {};
+
+// Who holds a problem, and who hears about it if it is still open later.
+// `after` is minutes since the problem began. The first entry is always
+// the person whose job it is; later entries are who else needs to know.
+window.KuBi.ESCALATION = {
+  waitingTooLong: [{
+    after: 0,
+    role: 'front_desk_receptionist'
+  }, {
+    after: 20,
+    role: 'clinic_manager'
+  }, {
+    after: 40,
+    role: 'owner_admin'
+  }],
+  noShow: [{
+    after: 0,
+    role: 'front_desk_receptionist'
+  }, {
+    after: 60,
+    role: 'clinic_manager'
+  }],
+  treatmentNotReady: [{
+    after: 0,
+    role: 'lead_dental_assistant'
+  }, {
+    after: 15,
+    role: 'lead_dentist'
+  }, {
+    after: 30,
+    role: 'clinic_manager'
+  }],
+  roomNotReady: [{
+    after: 0,
+    role: 'lead_dental_assistant'
+  }, {
+    after: 30,
+    role: 'clinic_manager'
+  }],
+  caseNotClosed: [{
+    after: 0,
+    role: 'lead_dentist'
+  }, {
+    after: 120,
+    role: 'clinic_manager'
+  }, {
+    after: 480,
+    role: 'owner_admin'
+  }],
+  equipmentDown: [{
+    after: 0,
+    role: 'lead_dental_assistant'
+  }, {
+    after: 60,
+    role: 'clinic_manager'
+  }, {
+    after: 240,
+    role: 'owner_admin'
+  }],
+  labLate: [{
+    after: 0,
+    role: 'front_desk_receptionist'
+  }, {
+    after: 1440,
+    role: 'clinic_manager'
+  },
+  // still not here the next day
+  {
+    after: 4320,
+    role: 'owner_admin'
+  } // three days
+  ],
+  repairOpen: [{
+    after: 0,
+    role: 'clinic_manager'
+  }, {
+    after: 4320,
+    role: 'owner_admin'
+  }]
+};
+
+/** How long this problem has been going on, in whole minutes. */
+window.KuBi.exceptionAgeMinutes = function (item, now) {
+  if (!item || !item.raisedAt) return 0;
+  const then = new Date(item.raisedAt).getTime();
+  const at = (now ? new Date(now) : new Date()).getTime();
+  return Math.max(0, Math.floor((at - then) / 60000));
+};
+
+/**
+ * Where this problem has got to: who holds it now, how long it has been
+ * open, and who hears next if it stays open.
+ *
+ * An exception with no chain stays with the role that raised it. That is
+ * a deliberate fallback rather than an error: a new kind of exception
+ * should still name somebody, not nobody.
+ */
+window.KuBi.exceptionEscalation = function (item, now) {
+  const chain = window.KuBi.ESCALATION[item && item.kind] || [];
+  const age = window.KuBi.exceptionAgeMinutes(item, now);
+  if (!chain.length) {
+    return {
+      level: 0,
+      owner: item && item.owner || null,
+      ageMinutes: age,
+      escalated: false,
+      nextRole: null,
+      nextInMinutes: null
+    };
+  }
+  let level = 0;
+  for (let i = 0; i < chain.length; i++) {
+    if (age >= chain[i].after) level = i;
+  }
+  const next = chain[level + 1] || null;
+  return {
+    level: level,
+    owner: chain[level].role,
+    ageMinutes: age,
+    escalated: level > 0,
+    nextRole: next ? next.role : null,
+    nextInMinutes: next ? Math.max(0, next.after - age) : null
+  };
+};
+
+/** The whole chain for a kind, for showing what will happen if nothing does. */
+window.KuBi.escalationChain = function (kind) {
+  return (window.KuBi.ESCALATION[kind] || []).slice();
+};
+
 // ---- src/attention.js ----
 // attention.js — single source of truth for "what needs attention right
 // now", surfaced on TODAY. There is deliberately no Exceptions module:
@@ -37082,6 +37269,9 @@ window.KuBi.closureGate = function (procedureType, checkedMap) {
 // enough context (apptId, subtab, room) to jump directly to the problem.
 
 window.KuBi = window.KuBi || {};
+
+// Waiting longer than this is an exception, per the clinic's SOP.
+const WAIT_LIMIT_MIN = 15;
 window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfter, readinessChecked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived, equipmentStatus) {
   const items = [];
   const now = Date.now();
@@ -37125,7 +37315,8 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
             room_no: room,
             done: rs.done,
             total: rs.total,
-            owner: section.ownerRole || OWNER.roomNotReady
+            owner: section.ownerRole || OWNER.roomNotReady,
+            raisedAt: clinicStatus.at || null
           });
         }
       });
@@ -37144,7 +37335,8 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
           kind: 'waitingTooLong',
           patient: a.patient,
           minutes: minutes,
-          owner: OWNER.waitingTooLong
+          owner: OWNER.waitingTooLong,
+          raisedAt: new Date(new Date(a.statusAt).getTime() + WAIT_LIMIT_MIN * 60000)
         });
       }
     }
@@ -37155,7 +37347,8 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
         apptId: a.id,
         kind: 'noShow',
         patient: a.patient,
-        owner: OWNER.noShow
+        owner: OWNER.noShow,
+        raisedAt: a.statusAt || null
       });
     }
 
@@ -37172,7 +37365,8 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
           kind: 'treatmentNotReady',
           patient: a.patient,
           missing: before.missing,
-          owner: OWNER.treatmentNotReady
+          owner: OWNER.treatmentNotReady,
+          raisedAt: a.statusAt || null
         });
       }
     }
@@ -37191,7 +37385,8 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
           kind: 'caseNotClosed',
           patient: a.patient,
           procedure: a.procedureType,
-          owner: OWNER.caseNotClosed
+          owner: OWNER.caseNotClosed,
+          raisedAt: proc.completedAt || null
         });
       }
     }
@@ -37216,7 +37411,8 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
       kind: 'equipmentDown',
       equipItem: item,
       note: equip[id].note || '',
-      owner: OWNER.equipmentDown
+      owner: OWNER.equipmentDown,
+      raisedAt: equip[id].at || null
     });
   });
 
@@ -37233,7 +37429,10 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
       patient: c.patient,
       item: c.item,
       due: c.due,
-      owner: OWNER.labLate
+      owner: OWNER.labLate,
+      // The promise was for the end of that day, so lateness starts the
+      // morning after it.
+      raisedAt: new Date(c.due + 'T09:00:00')
     });
   });
 
@@ -37250,10 +37449,23 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
       what: r.what,
       place: r.place,
       days: window.KuBi.repairAgeDays(r),
-      owner: OWNER.repairOpen
+      owner: OWNER.repairOpen,
+      raisedAt: r.at || null
     });
   });
-  return items;
+
+  // Work out where each problem has got to. `owner` becomes whoever holds
+  // it NOW rather than who it started with, so every screen that already
+  // prints the owner shows the escalation without needing to know about
+  // it. The original is kept as raisedOwner for anyone who needs it.
+  return items.map(function (it) {
+    const esc = window.KuBi.exceptionEscalation(it, now);
+    return Object.assign({}, it, {
+      raisedOwner: it.owner,
+      owner: esc.owner || it.owner,
+      escalation: esc
+    });
+  });
 };
 
 // ---- src/equipment.js ----
@@ -39643,6 +39855,15 @@ window.KuBi.Today = function Today({
     }
     return '';
   }
+
+  // How long, briefly. Minutes stop being useful after an hour and hours
+  // after a day, and an exception four days old should read as four days.
+  function openFor(item) {
+    const m = item.escalation ? item.escalation.ageMinutes : 0;
+    if (m < 60) return m + ' ' + t('attention.minutesShort', lang);
+    if (m < 1440) return Math.floor(m / 60) + ' ' + t('attention.hoursShort', lang);
+    return Math.floor(m / 1440) + ' ' + t('attention.daysShort', lang);
+  }
   function areaLabel(area) {
     return t('nav.' + area, lang).toUpperCase();
   }
@@ -39853,7 +40074,11 @@ window.KuBi.Today = function Today({
     }, t('why.owner', lang), " ", /*#__PURE__*/React.createElement(window.KuBi.RoleBadge, {
       roleId: item.owner,
       lang: lang
-    })) : null));
+    }), item.escalation && item.escalation.escalated ? /*#__PURE__*/React.createElement("span", {
+      className: "attention-escalated"
+    }, t('attention.escalated', lang)) : null, item.escalation && item.escalation.ageMinutes > 0 ? /*#__PURE__*/React.createElement("span", {
+      className: "attention-age"
+    }, openFor(item), " ", t('attention.openFor', lang)) : null) : null));
   }), attentionHidden > 0 ? /*#__PURE__*/React.createElement("li", {
     className: "check-item attention-item attention-more"
   }, /*#__PURE__*/React.createElement("span", {
@@ -41853,6 +42078,15 @@ window.KuBi.Management = function Management({
   const attendanceCounts = window.KuBi.attendanceCounts();
   const staffPresent = attendanceCounts.Present + attendanceCounts.Late;
   const staffTotal = staffPresent + attendanceCounts.Absent;
+
+  // How long, briefly. Minutes stop being useful after an hour and hours
+  // after a day, and an exception four days old should read as four days.
+  function openFor(item) {
+    const m = item.escalation ? item.escalation.ageMinutes : 0;
+    if (m < 60) return m + ' ' + t('attention.minutesShort', lang);
+    if (m < 1440) return Math.floor(m / 60) + ' ' + t('attention.hoursShort', lang);
+    return Math.floor(m / 1440) + ' ' + t('attention.daysShort', lang);
+  }
   function attentionText(item) {
     if (item.kind === 'waitingTooLong') return item.patient + ' — ' + t('attention.waitingTooLong', lang) + ' ' + item.minutes + ' ' + t('attention.minutes', lang);
     if (item.kind === 'noShow') return item.patient + ' — ' + t('attention.noShow', lang);
@@ -41963,7 +42197,11 @@ window.KuBi.Management = function Management({
     }, t('why.owner', lang), " ", /*#__PURE__*/React.createElement(window.KuBi.RoleBadge, {
       roleId: item.owner,
       lang: lang
-    })) : null));
+    }), item.escalation && item.escalation.escalated ? /*#__PURE__*/React.createElement("span", {
+      className: "attention-escalated"
+    }, t('attention.escalated', lang)) : null, item.escalation && item.escalation.ageMinutes > 0 ? /*#__PURE__*/React.createElement("span", {
+      className: "attention-age"
+    }, openFor(item), " ", t('attention.openFor', lang)) : null) : null));
   }), attention.length > 5 ? /*#__PURE__*/React.createElement("li", {
     className: "own-attention-item attention-more"
   }, /*#__PURE__*/React.createElement("span", {

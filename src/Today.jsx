@@ -53,6 +53,16 @@ window.KuBi.Today = function Today({ currentUser, lang, clinicStatus, appointmen
     return '';
   }
 
+
+  // How long, briefly. Minutes stop being useful after an hour and hours
+  // after a day, and an exception four days old should read as four days.
+  function openFor(item) {
+    const m = item.escalation ? item.escalation.ageMinutes : 0;
+    if (m < 60) return m + ' ' + t('attention.minutesShort', lang);
+    if (m < 1440) return Math.floor(m / 60) + ' ' + t('attention.hoursShort', lang);
+    return Math.floor(m / 1440) + ' ' + t('attention.daysShort', lang);
+  }
+
   function areaLabel(area) {
     return t('nav.' + area, lang).toUpperCase();
   }
@@ -239,6 +249,12 @@ window.KuBi.Today = function Today({ currentUser, lang, clinicStatus, appointmen
                     {item.owner ? (
                       <span className="attention-owner">
                         {t('why.owner', lang)} <window.KuBi.RoleBadge roleId={item.owner} lang={lang} />
+                        {item.escalation && item.escalation.escalated ? (
+                          <span className="attention-escalated">{t('attention.escalated', lang)}</span>
+                        ) : null}
+                        {item.escalation && item.escalation.ageMinutes > 0 ? (
+                          <span className="attention-age">{openFor(item)} {t('attention.openFor', lang)}</span>
+                        ) : null}
                       </span>
                     ) : null}
                   </span>

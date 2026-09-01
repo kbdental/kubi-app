@@ -535,7 +535,14 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   check('A fault reported today is not chased yet', attnFor(freshFault).length === 0);
   check('A fault open for days needs attention', attnFor(oldFault).length === 1);
   check('A fixed fault is never chased', attnFor(fixedFault).length === 0);
-  check('Repair attention names an owner', (attnFor(oldFault)[0] || {}).owner === 'clinic_manager');
+  // A repair starts with the Clinic Manager. The one in this fixture has
+  // been open three days, which is exactly when it stops being only their
+  // problem — so the owner shown is the Owner, and who it started with is
+  // still recorded.
+  check('Repair attention names whoever holds it now',
+        (attnFor(oldFault)[0] || {}).raisedOwner === 'clinic_manager' &&
+        (attnFor(oldFault)[0] || {}).owner === 'owner_admin',
+        (attnFor(oldFault)[0] || {}).raisedOwner + ' -> ' + (attnFor(oldFault)[0] || {}).owner);
 
   // 26. LAB — late is derived from the promised date, and one truth
   //     serves both the lab screen and the supply check.
@@ -889,6 +896,58 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   check('A translated case still tracks the same progress',
         K.caseProgress('VS0221-CROWN_SINGLE-01', [], 'hi').completed.length ===
         K.caseProgress('VS0221-CROWN_SINGLE-01', [], 'en').completed.length);
+
+  // 34. EXCEPTION + ESCALATION — problem, owner, action, escalation,
+  //     resolution. V1 named an owner; it could not say how long a problem
+  //     had been waiting or who hears about it next.
+  const escOpen = { open: true, by: 'X', at: new Date(Date.now() - 3 * 3600000) };
+  const waitingSince = mins => [{ id: 'W1', patient: 'Rohan', chair: 1, status: 'waiting',
+                                  procedureType: 'RCT', time: '09:00',
+                                  statusAt: new Date(Date.now() - mins * 60000) }];
+  const waitItem = mins => K.computeAttentionItems(waitingSince(mins), {}, {}, escOpen, {}, {}, {}, [], {}, {})
+                            .find(i => i.kind === 'waitingTooLong');
+
+  check('An exception records when it began', !!waitItem(30).raisedAt);
+  // Waiting is an exception after 15 minutes, so a 30-minute wait has been
+  // an exception for 15 — the age is of the PROBLEM, not of the patient.
+  check('Age is measured from when it became a problem',
+        waitItem(30).escalation.ageMinutes === 15, waitItem(30).escalation.ageMinutes + ' min');
+
+  check('It starts with whoever owns it',
+        waitItem(16).owner === 'front_desk_receptionist' && waitItem(16).escalation.escalated === false);
+  check('It escalates when it keeps waiting',
+        waitItem(36).owner === 'clinic_manager' && waitItem(36).escalation.escalated === true,
+        '36 min waiting -> ' + waitItem(36).owner);
+  check('And escalates again',
+        waitItem(56).owner === 'owner_admin', '56 min waiting -> ' + waitItem(56).owner);
+  check('It says who hears next, and when',
+        waitItem(16).escalation.nextRole === 'clinic_manager' &&
+        waitItem(16).escalation.nextInMinutes === 19,
+        'next: ' + waitItem(16).escalation.nextRole + ' in ' + waitItem(16).escalation.nextInMinutes + ' min');
+  check('The last step has nobody left to tell',
+        waitItem(56).escalation.nextRole === null && waitItem(56).escalation.nextInMinutes === null);
+  check('Who it started with is not lost',
+        waitItem(56).raisedOwner === 'front_desk_receptionist');
+
+  // Resolution is the problem going away, not a flag somebody ticks.
+  const seated = [{ id: 'W1', patient: 'Rohan', chair: 1, status: 'in_chair', procedureType: 'RCT',
+                    time: '09:00', statusAt: new Date(Date.now() - 60 * 60000) }];
+  check('Resolution is the condition ending, not a flag',
+        K.computeAttentionItems(seated, {}, {}, escOpen, {}, {}, {}, [], {}, {})
+          .filter(i => i.kind === 'waitingTooLong').length === 0);
+
+  // Every kind KuBi raises must know who to tell.
+  const kinds = ['waitingTooLong', 'noShow', 'treatmentNotReady', 'roomNotReady',
+                 'caseNotClosed', 'equipmentDown', 'labLate', 'repairOpen'];
+  check('Every kind of exception has a chain',
+        kinds.every(k => K.escalationChain(k).length > 0), kinds.length + ' kinds');
+  check('Every chain starts at nought minutes',
+        kinds.every(k => K.escalationChain(k)[0].after === 0));
+  check('Every chain only names real roles',
+        kinds.every(k => K.escalationChain(k).every(step => !!K.getRole(step.role))));
+  // An unknown kind must still name somebody rather than nobody.
+  check('An exception with no chain keeps its owner',
+        K.exceptionEscalation({ kind: 'somethingNew', owner: 'clinic_manager' }).owner === 'clinic_manager');
 
   // SUMMARY
   await step(() => {}, 150);

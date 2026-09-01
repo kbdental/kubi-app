@@ -164,7 +164,47 @@ window.KuBi.buildSnapshot = function (ctx, closedProperly) {
     staffTotal: counts.Present + counts.Late + counts.Absent,
     exceptions: attention.length,
     docPending: d.docPending,
+
+    // WHICH problems, not just how many. A day that stored only "7" tells
+    // you nothing two months later about whether it is always Chair 3.
+    // This is the field that makes "what keeps going wrong" answerable,
+    // and history you did not record cannot be recovered afterwards.
+    exceptionKinds: attention.reduce(function (acc, it) {
+      acc[it.kind] = (acc[it.kind] || 0) + 1;
+      return acc;
+    }, {}),
+
+    // What the day left behind. Cases do not end when the clinic closes.
+    casesOpen: window.KuBi.openCases(ctx).length,
+    followUpsDue: window.KuBi.followUpsDue().length,
   };
+};
+
+// ---- what keeps going wrong -------------------------------------------
+// Counts every kind of exception across the stored days, with the number
+// of DAYS it appeared on as well as the total. A fault that happened nine
+// times on one bad Tuesday is a different problem from one that happens
+// once a day, every day, and the two need different answers.
+window.KuBi.repeatingProblems = function (days) {
+  const today = window.KuBi.operatingDate();
+  const cutoff = window.KuBi.operatingDate(new Date(Date.now() - (days || 30) * 86400000));
+  const rows = window.KuBi.historyStore.all().filter(function (s) {
+    return s.date >= cutoff && s.date < today;
+  });
+
+  const tally = {};
+  rows.forEach(function (s) {
+    const kinds = s.exceptionKinds || {};
+    Object.keys(kinds).forEach(function (k) {
+      if (!tally[k]) tally[k] = { kind: k, total: 0, days: 0 };
+      tally[k].total += kinds[k];
+      if (kinds[k] > 0) tally[k].days += 1;
+    });
+  });
+
+  return Object.keys(tally)
+    .map(function (k) { return tally[k]; })
+    .sort(function (a, b) { return b.days - a.days || b.total - a.total; });
 };
 
 // Commit today's snapshot. Called when the clinic is closed.
@@ -215,7 +255,11 @@ window.KuBi.historyDepth = function () {
 // Count metrics sum over the period; rate metrics average. A total
 // waiting time would be meaningless, so the two are treated differently.
 window.KuBi.MIS_COUNT_FIELDS = ['booked', 'arrived', 'completed', 'noShow', 'treatmentsFinished', 'casesClosed', 'exceptions', 'docPending'];
-window.KuBi.MIS_RATE_FIELDS = ['readinessPct', 'avgWait', 'maxWait', 'staffPresent', 'staffTotal'];
+// casesOpen and followUpsDue are a state of the day, not a tally of it:
+// summing "7 cases open" across a week would be meaningless, so they
+// average like the other rates.
+window.KuBi.MIS_RATE_FIELDS = ['readinessPct', 'avgWait', 'maxWait', 'staffPresent', 'staffTotal',
+                              'casesOpen', 'followUpsDue'];
 
 window.KuBi.PERIODS = ['today', 'yesterday', 'week', 'month'];
 

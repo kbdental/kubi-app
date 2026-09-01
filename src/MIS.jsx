@@ -105,6 +105,37 @@ window.KuBi.MIS = function MIS(props) {
             })}
           </tbody>
         </table>
+        {/* Which problems repeat — the management question KuBi could not
+            answer, because a stored day used to keep only how MANY
+            exceptions there were. Days-appeared-on is listed before the
+            total: nine faults on one bad Tuesday is a different problem
+            from one a day for nine days. */}
+        {window.KuBi.historyDepth() > 0 ? (function () {
+          const repeats = window.KuBi.repeatingProblems(30);
+          return (
+            <div className="mis-repeats">
+              <div className="card-title">{t('mis.repeats', lang)}</div>
+              {repeats.length === 0 ? (
+                <p className="module-sub">{t('mis.repeatsNone', lang)}</p>
+              ) : (
+                <ul className="mis-repeat-list">
+                  {repeats.slice(0, 5).map(function (r) {
+                    return (
+                      <li key={r.kind} className="mis-repeat-row">
+                        <span className="mis-repeat-kind">{t('attention.' + r.kind, lang) !== 'attention.' + r.kind
+                          ? t('attention.' + r.kind, lang) : r.kind}</span>
+                        <span className="mis-repeat-count">
+                          {r.days} {t('mis.onDays', lang)} · {r.total} {t('mis.timesTotal', lang)}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          );
+        })() : null}
+
         {window.KuBi.historyDepth() === 0 ? (
           <p className="module-sub trend-note">{t('mis.trendNeedsHistory', lang)}</p>
         ) : null}

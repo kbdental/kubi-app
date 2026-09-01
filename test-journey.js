@@ -1070,6 +1070,60 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   const firstFive = ordered.slice(0, 5).map(i => i.kind);
   check('The top five are not all one kind', new Set(firstFive).size > 1, firstFive.join(', '));
 
+  // 38. PERSISTENT MIS — daily snapshot, history, trends.
+  //     The snapshot used to record how MANY exceptions a day had. Two
+  //     months of "7" says nothing about whether it is always Chair 3, and
+  //     history you did not record cannot be recovered later.
+  const snapOpen = { open: true, by: 'X', at: new Date() };
+  const snapCtx = {
+    appointments: K.APPOINTMENTS_TODAY, procedureState: {}, closedCases: {},
+    treatmentChecked: {}, treatmentCheckedAfter: {}, readinessChecked: {},
+    equipmentStatus: K.EQUIPMENT_STATUS_SEED, sterPacks: [], clinicStatus: snapOpen,
+    closingChecked: {}, repairs: K.REPAIRS_SEED, labReceived: {},
+  };
+  const snap = K.buildSnapshot(snapCtx, true);
+  check('A snapshot records WHICH problems, not just how many',
+        !!snap.exceptionKinds && Object.keys(snap.exceptionKinds).length > 0,
+        Object.keys(snap.exceptionKinds).join(', '));
+  check('The kinds add up to the total',
+        Object.keys(snap.exceptionKinds).reduce((n, k) => n + snap.exceptionKinds[k], 0) === snap.exceptions,
+        snap.exceptions + ' exceptions');
+  check('A snapshot records what the day left open',
+        typeof snap.casesOpen === 'number' && typeof snap.followUpsDue === 'number',
+        snap.casesOpen + ' cases, ' + snap.followUpsDue + ' follow-ups');
+
+  // Repeats: days-appeared-on before the total, because nine faults on one
+  // bad Tuesday is a different problem from one a day for nine days.
+  K.historyStore.reset();
+  check('No history means nothing repeats', K.repeatingProblems(30).length === 0);
+  const dayAgo = n => K.operatingDate(new Date(Date.now() - n * 86400000));
+  K.historyStore.put({ date: dayAgo(1), exceptionKinds: { roomNotReady: 1, labLate: 1 }, exceptions: 2 });
+  K.historyStore.put({ date: dayAgo(2), exceptionKinds: { roomNotReady: 1 }, exceptions: 1 });
+  K.historyStore.put({ date: dayAgo(3), exceptionKinds: { roomNotReady: 1, waitingTooLong: 9 }, exceptions: 10 });
+  const rep = K.repeatingProblems(30);
+  check('What repeats is counted across days',
+        rep[0].kind === 'roomNotReady' && rep[0].days === 3 && rep[0].total === 3,
+        rep.map(r => r.kind + ' ' + r.days + 'd/' + r.total).join(', '));
+  check('A one-day spike does not outrank a daily problem',
+        rep.findIndex(r => r.kind === 'roomNotReady') < rep.findIndex(r => r.kind === 'waitingTooLong'),
+        'waitingTooLong was 9 times but on 1 day');
+  check('Only days inside the window count',
+        K.repeatingProblems(2).every(r => r.days <= 2), '2-day window');
+
+  // A day stored before this change has no kinds, and must not break it.
+  K.historyStore.reset();
+  K.historyStore.put({ date: dayAgo(1), exceptions: 5 });
+  check('An older day without kinds is simply skipped', K.repeatingProblems(30).length === 0);
+  check('...and still counts for the figures it does have',
+        K.aggregatePeriod('yesterday').exceptions === 5);
+  K.historyStore.reset();
+
+  // Cases and follow-ups average rather than sum: "7 open" across a week
+  // is not 49.
+  check('Open cases average across a period, they do not add up',
+        K.MIS_RATE_FIELDS.indexOf('casesOpen') !== -1 &&
+        K.MIS_COUNT_FIELDS.indexOf('casesOpen') === -1);
+
   // SUMMARY
   await step(() => {}, 150);
   const failed = results.filter(r => !r.pass);

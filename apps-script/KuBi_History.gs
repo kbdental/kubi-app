@@ -35,9 +35,18 @@ var HEADERS = [
   'date', 'closedProperly', 'booked', 'arrived', 'completed', 'noShow',
   'treatmentsFinished', 'casesClosed', 'readinessPct', 'avgWait', 'maxWait',
   'staffPresent', 'staffTotal', 'exceptions', 'docPending', 'updatedAt',
+  // Appended, per the rule above. Existing rows keep their meaning and
+  // simply have these blank.
+  'casesOpen', 'followUpsDue', 'exceptionKinds',
 ];
 
+// Held as JSON text in one cell: which kinds of exception happened and how
+// often. Columns per kind would need a new column every time KuBi learns to
+// notice something new.
+var JSON_FIELDS = { exceptionKinds: true };
+
 var NUMERIC = {
+  casesOpen: true, followUpsDue: true,
   booked: true, arrived: true, completed: true, noShow: true,
   treatmentsFinished: true, casesClosed: true, readinessPct: true,
   avgWait: true, maxWait: true, staffPresent: true, staffTotal: true,
@@ -84,6 +93,9 @@ function rowsToObjects_(values) {
       var val = row[c];
       if (key === 'date') val = dateKey_(val);
       else if (key === 'closedProperly') val = (val === true || String(val).toLowerCase() === 'true');
+      else if (JSON_FIELDS[key]) {
+        try { val = val ? JSON.parse(val) : {}; } catch (e) { val = {}; }
+      }
       else if (NUMERIC[key]) val = (val === '' || val === null) ? null : Number(val);
       obj[key] = val;
     }
@@ -96,7 +108,9 @@ function snapshotToRow_(snap) {
   return HEADERS.map(function (h) {
     if (h === 'updatedAt') return new Date();
     var v = snap[h];
-    return (v === undefined || v === null) ? '' : v;
+    if (v === undefined || v === null) return '';
+    if (JSON_FIELDS[h]) return JSON.stringify(v);
+    return v;
   });
 }
 

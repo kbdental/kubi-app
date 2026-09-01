@@ -13,7 +13,7 @@ React is bundled in.
 ```bash
 npm install
 npm run build     # compiles src/ -> KuBi.html
-npm test          # builds, then runs 221 journey checks + 7 bundle checks
+npm test          # builds, then runs 231 journey checks + 7 bundle checks
 ```
 
 `KuBi.html` is generated. Edit `src/`, never the bundle.
@@ -225,6 +225,41 @@ already prints the owner shows the escalation without knowing about it.
 **⚠ The escalation times need the clinic's sign-off.** The waiting chain
 follows the blueprint's own example; the rest are proportionate to how much
 harm the delay does, which is a judgement the clinic should make.
+
+## Persistent MIS
+
+    Daily snapshot → history → trends
+
+A day is filed when the clinic is CLOSED, which is the only moment its
+figures are final. A rolling snapshot is also kept during the day so an
+unclosed day is filed with what was last known, flagged
+`closedProperly: false` rather than lost.
+
+The snapshot records **which** problems the day had, not only how many.
+Two months of `exceptions: 7` says nothing about whether it is always
+Chair 3. `repeatingProblems(days)` counts each kind across stored days and
+reports **days-appeared-on before the total**, because nine faults on one
+bad Tuesday is a different problem from one a day for nine days, and the
+two need different answers. MIS shows the top five under "What keeps going
+wrong", once there is history to show.
+
+It also records what the day left behind — `casesOpen` and `followUpsDue`.
+Both average across a period rather than summing: seven cases open every
+day for a week is seven, not forty-nine.
+
+History you did not record cannot be recovered later, which is why this
+went in before the analysis that needs it.
+
+### Changing the sheet's columns
+
+`HEADERS` in the .gs is appended to, never reordered — existing rows keep
+their meaning and simply have the new columns blank. `exceptionKinds` is
+held as JSON text in one cell; a column per kind would need a new column
+every time KuBi learns to notice something new.
+
+**After changing HEADERS, re-deploy the script as a NEW VERSION.** Until
+then the extra fields are simply dropped, which is safe but means the days
+filed in between carry no kinds.
 
 ## Two rules that hold the design together
 

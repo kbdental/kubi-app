@@ -617,6 +617,10 @@
   .lapsed-kind { display: block; font-size: 11.5px; font-weight: 700; color: var(--ink-soft); }
   .lapsed-plan { display: block; font-size: 12.5px; }
 
+  /* Not actionable for this role: same information, no affordance. */
+  .now-card-readonly { cursor: default; }
+  .now-card-readonly:hover { transform: none; }
+
   .today-greeting { color: var(--ink-soft); font-size: 14px; margin: 2px 0 0; }
   .now-next-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; opacity: 0.75; }
 
@@ -750,7 +754,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 31 Aug 2026, 04:29 pm';
+  window.KuBi.BUILD_STAMP = 'Build: 01 Sept 2026, 01:49 pm';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -35627,6 +35631,15 @@ window.KuBi.AREA_ACCESS = {
   sterilization_technician: ['today', 'clinic', 'treatment'],
   house_keeping: ['today', 'clinic']
 };
+
+// Can this role open this area at all? The sidebar is built from
+// AREA_ACCESS, but navigation can also come from a card or a list item, so
+// the same rule has to be answerable from anywhere.
+window.KuBi.canReach = function (roleId, area) {
+  if (!area) return true;
+  const allowed = window.KuBi.AREA_ACCESS[roleId] || [];
+  return allowed.indexOf(area) !== -1;
+};
 window.KuBi.getRole = function (roleId) {
   return window.KuBi.ROLES.find(function (r) {
     return r.id === roleId;
@@ -38714,12 +38727,14 @@ window.KuBi.Today = function Today({
       tone = 'now-good';
       mark = '🔵';
     }
-    return /*#__PURE__*/React.createElement("button", {
-      className: 'now-card ' + tone,
-      onClick: function () {
-        goTo(na.area, na.subtab || null, na.apptId || null, na.room || null);
-      }
-    }, /*#__PURE__*/React.createElement("div", {
+
+    // The engine describes the whole clinic, so the one thing happening
+    // now is often somebody else's job. Whoever is looking should still
+    // see it — that is the point of a shared NOW — but for a role that
+    // cannot open the area it lives in, this is information, not an
+    // instruction. No button, and no next step it cannot take.
+    const mine = window.KuBi.canReach(currentUser.role, na.area);
+    const body = /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
       className: "now-label"
     }, mark, " ", t('now.label', lang)), /*#__PURE__*/React.createElement("div", {
       className: "now-headline"
@@ -38727,16 +38742,24 @@ window.KuBi.Today = function Today({
       className: "now-detail"
     }, detail) : null, /*#__PURE__*/React.createElement("div", {
       className: "now-footer"
-    }, /*#__PURE__*/React.createElement("span", {
+    }, mine ? /*#__PURE__*/React.createElement("span", {
       className: "now-cta"
     }, /*#__PURE__*/React.createElement("span", {
       className: "now-next-label"
-    }, t('now.next', lang), ":"), " ", cta, " \u2192"), na.owner ? /*#__PURE__*/React.createElement("span", {
+    }, t('now.next', lang), ":"), " ", cta, " \u2192") : /*#__PURE__*/React.createElement("span", null), na.owner ? /*#__PURE__*/React.createElement("span", {
       className: "now-owner"
     }, t('why.owner', lang), " ", /*#__PURE__*/React.createElement(window.KuBi.RoleBadge, {
       roleId: na.owner,
       lang: lang
     })) : null));
+    return mine ? /*#__PURE__*/React.createElement("button", {
+      className: 'now-card ' + tone,
+      onClick: function () {
+        goTo(na.area, na.subtab || null, na.apptId || null, na.room || null);
+      }
+    }, body) : /*#__PURE__*/React.createElement("div", {
+      className: 'now-card now-card-readonly ' + tone
+    }, body);
   }(), /*#__PURE__*/React.createElement("div", {
     className: "today-secondary"
   }, /*#__PURE__*/React.createElement("div", {
@@ -40901,20 +40924,13 @@ function LoginScreen({
     className: "build-stamp build-stamp-login"
   }, window.KuBi.BUILD_STAMP)));
 }
-function Shell({
-  user,
-  onLogout,
-  lang,
-  setLang
-}) {
-  const t = window.KuBi.t;
-  const access = window.KuBi.AREA_ACCESS[user.role] || [];
-  const [activeArea, setActiveArea] = React.useState(access[0]);
-  const [navTarget, setNavTarget] = React.useState({
-    subtab: null,
-    apptId: null,
-    room: null
-  });
+
+// The whole clinic day. It lives in App, ABOVE the login gate, because
+// Shell unmounts the moment somebody signs out — and a clinic shares one
+// terminal. When housekeeping hands over to the front desk, the clinic
+// must still be open and the morning checklist still ticked. Only `user`
+// changes at a shift change; the day does not.
+function useClinicDay() {
   const [clinicStatus, setClinicStatus] = React.useState({
     open: false,
     by: null,
@@ -40937,6 +40953,74 @@ function Shell({
   const [repairs, setRepairs] = React.useState(window.KuBi.REPAIRS_SEED || []);
   const [labReceived, setLabReceived] = React.useState({});
   const [sterPacks, setSterPacks] = React.useState(window.KuBi.STER_PACKS || []);
+  return {
+    clinicStatus: clinicStatus,
+    setClinicStatus: setClinicStatus,
+    readinessChecked: readinessChecked,
+    setReadinessChecked: setReadinessChecked,
+    appointments: appointments,
+    setAppointments: setAppointments,
+    treatmentChecked: treatmentChecked,
+    setTreatmentChecked: setTreatmentChecked,
+    treatmentCheckedAfter: treatmentCheckedAfter,
+    setTreatmentCheckedAfter: setTreatmentCheckedAfter,
+    closingChecked: closingChecked,
+    setClosingChecked: setClosingChecked,
+    procedureState: procedureState,
+    setProcedureState: setProcedureState,
+    closedCases: closedCases,
+    setClosedCases: setClosedCases,
+    equipmentStatus: equipmentStatus,
+    setEquipmentStatus: setEquipmentStatus,
+    repairs: repairs,
+    setRepairs: setRepairs,
+    labReceived: labReceived,
+    setLabReceived: setLabReceived,
+    sterPacks: sterPacks,
+    setSterPacks: setSterPacks
+  };
+}
+function Shell({
+  user,
+  onLogout,
+  lang,
+  setLang,
+  day
+}) {
+  const t = window.KuBi.t;
+  const access = window.KuBi.AREA_ACCESS[user.role] || [];
+  const [activeArea, setActiveArea] = React.useState(access[0]);
+  const [navTarget, setNavTarget] = React.useState({
+    subtab: null,
+    apptId: null,
+    room: null
+  });
+  const {
+    clinicStatus,
+    setClinicStatus,
+    readinessChecked,
+    setReadinessChecked,
+    appointments,
+    setAppointments,
+    treatmentChecked,
+    setTreatmentChecked,
+    treatmentCheckedAfter,
+    setTreatmentCheckedAfter,
+    closingChecked,
+    setClosingChecked,
+    procedureState,
+    setProcedureState,
+    closedCases,
+    setClosedCases,
+    equipmentStatus,
+    setEquipmentStatus,
+    repairs,
+    setRepairs,
+    labReceived,
+    setLabReceived,
+    sterPacks,
+    setSterPacks
+  } = day;
   const ActiveComponent = activeArea ? AREAS[activeArea].component() : null;
 
   // Keep a live snapshot of the day so nothing is lost if the clinic is
@@ -40957,6 +41041,13 @@ function Shell({
     });
   }, [appointments, procedureState, closedCases, treatmentChecked, treatmentCheckedAfter, readinessChecked, equipmentStatus, sterPacks, clinicStatus, closingChecked, repairs, labReceived]);
   function goTo(area, subtab, apptId, room) {
+    // Every jump in the app goes through here — the NOW card, attention
+    // items, chair tiles, journey links. Any of them can name an area this
+    // role has no access to (the engine describes the whole clinic, not
+    // one person's part of it), and following that would drop somebody
+    // into a screen their own sidebar says does not exist. Refuse, rather
+    // than half-navigate.
+    if (!window.KuBi.canReach(user.role, area)) return;
     setActiveArea(area);
     setNavTarget({
       subtab: subtab || null,
@@ -41292,6 +41383,7 @@ function Shell({
 function App() {
   const [user, setUser] = React.useState(null);
   const [lang, setLang] = React.useState('en');
+  const day = useClinicDay();
   if (!user) return /*#__PURE__*/React.createElement(LoginScreen, {
     onLogin: setUser,
     lang: lang,
@@ -41303,7 +41395,8 @@ function App() {
       setUser(null);
     },
     lang: lang,
-    setLang: setLang
+    setLang: setLang,
+    day: day
   });
 }
 ReactDOM.createRoot(document.getElementById('root')).render(/*#__PURE__*/React.createElement(App, null));

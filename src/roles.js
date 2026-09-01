@@ -43,6 +43,15 @@ window.KuBi.AREA_ACCESS = {
   house_keeping:                ['today', 'clinic'],
 };
 
+// Can this role open this area at all? The sidebar is built from
+// AREA_ACCESS, but navigation can also come from a card or a list item, so
+// the same rule has to be answerable from anywhere.
+window.KuBi.canReach = function (roleId, area) {
+  if (!area) return true;
+  const allowed = window.KuBi.AREA_ACCESS[roleId] || [];
+  return allowed.indexOf(area) !== -1;
+};
+
 window.KuBi.getRole = function (roleId) {
   return window.KuBi.ROLES.find(function (r) { return r.id === roleId; });
 };

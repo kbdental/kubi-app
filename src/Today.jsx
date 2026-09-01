@@ -156,20 +156,36 @@ window.KuBi.Today = function Today({ currentUser, lang, clinicStatus, appointmen
           tone = 'now-good'; mark = '🔵';
         }
 
-        return (
-          <button className={'now-card ' + tone} onClick={function () { goTo(na.area, na.subtab || null, na.apptId || null, na.room || null); }}>
+        // The engine describes the whole clinic, so the one thing happening
+        // now is often somebody else's job. Whoever is looking should still
+        // see it — that is the point of a shared NOW — but for a role that
+        // cannot open the area it lives in, this is information, not an
+        // instruction. No button, and no next step it cannot take.
+        const mine = window.KuBi.canReach(currentUser.role, na.area);
+        const body = (
+          <React.Fragment>
             <div className="now-label">{mark} {t('now.label', lang)}</div>
             <div className="now-headline">{headline}</div>
             {detail ? <div className="now-detail">{detail}</div> : null}
             <div className="now-footer">
-              <span className="now-cta"><span className="now-next-label">{t('now.next', lang)}:</span> {cta} →</span>
+              {mine ? (
+                <span className="now-cta"><span className="now-next-label">{t('now.next', lang)}:</span> {cta} →</span>
+              ) : <span />}
               {na.owner ? (
                 <span className="now-owner">
                   {t('why.owner', lang)} <window.KuBi.RoleBadge roleId={na.owner} lang={lang} />
                 </span>
               ) : null}
             </div>
+          </React.Fragment>
+        );
+
+        return mine ? (
+          <button className={'now-card ' + tone} onClick={function () { goTo(na.area, na.subtab || null, na.apptId || null, na.room || null); }}>
+            {body}
           </button>
+        ) : (
+          <div className={'now-card now-card-readonly ' + tone}>{body}</div>
         );
       })()}
 

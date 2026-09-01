@@ -257,8 +257,16 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   }
 
   // 20. ROLE ACCESS — front desk must not see Management or MIS
+  const openBeforeHandover = /Clinic Open/i.test(doc().body.textContent);
   await step(() => click(btnByText(/Sign out/)));
   await step(() => login('1115'));
+
+  // A clinic shares one terminal, so signing out is a HANDOVER, not the end
+  // of the day. The state used to live inside the signed-in shell, so a
+  // shift change reset the clinic to closed with the morning's work erased.
+  check('The day survives a shift change',
+        openBeforeHandover && /Clinic Open/i.test(doc().body.textContent),
+        'open before: ' + openBeforeHandover + ', after: ' + /Clinic Open/i.test(doc().body.textContent));
   const fdNavs = Array.from(doc().querySelectorAll('.nav-item')).map(n => n.textContent);
   check('Front Desk cannot see Management', !fdNavs.some(n => /Management/.test(n)), fdNavs.join(' | '));
   check('Front Desk cannot see MIS', !fdNavs.some(n => /MIS/.test(n)));
@@ -276,6 +284,52 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   check('Fumigation is visible to a role that does not own it', fdFumigation === 1, fdFumigation + ' copies');
   check('...and is tickable there', doc().querySelectorAll('.card input[type=checkbox]').length > 0,
         doc().querySelectorAll('.card input[type=checkbox]').length + ' checkboxes');
+
+  // 20c. The NOW card describes the whole clinic, so it often names somebody
+  //      else's job. For a role that cannot open the area it lives in, it
+  //      must be information rather than a dead button into a screen their
+  //      own sidebar says does not exist.
+  await step(() => click(navByText(/Today/)));
+  await step(() => {}, 250);
+  // Push the engine to name something in Treatment, which Front Desk cannot
+  // open — otherwise the read-only path is never exercised. Clearing the
+  // seeded equipment fault (Clinic, which they CAN open) hands the answer
+  // to the patient in the chair.
+  await step(() => click(navByText(/Clinic$/)));
+  await step(() => click(Array.from(doc().querySelectorAll('.sub-tab-row .toggle-btn')).find(b => /Equipment/.test(b.textContent))));
+  for (let r = 0; r < 4; r++) {
+    await step(() => click(doc().querySelectorAll('.room-tab')[r]), 120);
+    let guard = 0;
+    while (doc().querySelector('.equip-row-issue') && guard++ < 6) {
+      await step(() => click(doc().querySelector('.equip-row-issue .equip-head')), 100);
+      await step(() => click(doc().querySelector('.equip-detail .equip-actions button')), 100);
+    }
+  }
+  await step(() => click(navByText(/Today/)));
+  await step(() => {}, 300);
+
+  const fdCard = doc().querySelector('.now-card');
+  const readOnly = fdCard && /now-card-readonly/.test(fdCard.className);
+  // Whichever way it renders, the two must agree: a card offering a NEXT
+  // step must be pressable, and one that is not pressable must not offer a
+  // step the person cannot take. It always names the owner either way.
+  check('NOW card offers a next step only when it is pressable',
+        !fdCard || (readOnly ? (fdCard.tagName !== 'BUTTON' && !fdCard.querySelector('.now-cta'))
+                             : (fdCard.tagName === 'BUTTON' && !!fdCard.querySelector('.now-cta'))),
+        fdCard ? fdCard.tagName + (readOnly ? ' read-only' : ' actionable') : 'no card');
+  check('NOW card names the owner either way', !fdCard || !!fdCard.querySelector('.now-owner'));
+  // A read-only card must not navigate anywhere when pressed.
+  if (readOnly) {
+    const areaBefore = (doc().querySelector('.nav-item-active') || {}).textContent;
+    await step(() => click(fdCard));
+    await step(() => {}, 200);
+    check('Pressing a read-only NOW card goes nowhere',
+          ((doc().querySelector('.nav-item-active') || {}).textContent) === areaBefore,
+          String(areaBefore).trim());
+  }
+  check('Front Desk cannot reach Treatment', w.KuBi.canReach('front_desk_receptionist', 'treatment') === false);
+  check('House Keeping cannot reach Patients', w.KuBi.canReach('house_keeping', 'patients') === false);
+  check('Every role can reach Today', w.KuBi.ROLES.every(r => w.KuBi.canReach(r.id, 'today')));
 
   // 21. HINDI TOGGLE
   await step(() => click(Array.from(doc().querySelectorAll('.lang-btn')).find(b => /हिं/.test(b.textContent))));

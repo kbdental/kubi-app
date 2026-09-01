@@ -79,12 +79,12 @@ function LoginScreen({ onLogin, lang, setLang }) {
   );
 }
 
-function Shell({ user, onLogout, lang, setLang }) {
-  const t = window.KuBi.t;
-  const access = window.KuBi.AREA_ACCESS[user.role] || [];
-  const [activeArea, setActiveArea] = React.useState(access[0]);
-  const [navTarget, setNavTarget] = React.useState({ subtab: null, apptId: null, room: null });
-
+// The whole clinic day. It lives in App, ABOVE the login gate, because
+// Shell unmounts the moment somebody signs out — and a clinic shares one
+// terminal. When housekeeping hands over to the front desk, the clinic
+// must still be open and the morning checklist still ticked. Only `user`
+// changes at a shift change; the day does not.
+function useClinicDay() {
   const [clinicStatus, setClinicStatus] = React.useState({ open: false, by: null, at: null });
   const [readinessChecked, setReadinessChecked] = React.useState({}); // key -> { by, at }
   const [appointments, setAppointments] = React.useState(window.KuBi.APPOINTMENTS_TODAY);
@@ -103,6 +103,37 @@ function Shell({ user, onLogout, lang, setLang }) {
   const [repairs, setRepairs] = React.useState(window.KuBi.REPAIRS_SEED || []);
   const [labReceived, setLabReceived] = React.useState({});
   const [sterPacks, setSterPacks] = React.useState(window.KuBi.STER_PACKS || []);
+
+  return {
+    clinicStatus: clinicStatus, setClinicStatus: setClinicStatus,
+    readinessChecked: readinessChecked, setReadinessChecked: setReadinessChecked,
+    appointments: appointments, setAppointments: setAppointments,
+    treatmentChecked: treatmentChecked, setTreatmentChecked: setTreatmentChecked,
+    treatmentCheckedAfter: treatmentCheckedAfter, setTreatmentCheckedAfter: setTreatmentCheckedAfter,
+    closingChecked: closingChecked, setClosingChecked: setClosingChecked,
+    procedureState: procedureState, setProcedureState: setProcedureState,
+    closedCases: closedCases, setClosedCases: setClosedCases,
+    equipmentStatus: equipmentStatus, setEquipmentStatus: setEquipmentStatus,
+    repairs: repairs, setRepairs: setRepairs,
+    labReceived: labReceived, setLabReceived: setLabReceived,
+    sterPacks: sterPacks, setSterPacks: setSterPacks,
+  };
+}
+
+function Shell({ user, onLogout, lang, setLang, day }) {
+  const t = window.KuBi.t;
+  const access = window.KuBi.AREA_ACCESS[user.role] || [];
+  const [activeArea, setActiveArea] = React.useState(access[0]);
+  const [navTarget, setNavTarget] = React.useState({ subtab: null, apptId: null, room: null });
+
+  const {
+    clinicStatus, setClinicStatus, readinessChecked, setReadinessChecked,
+    appointments, setAppointments, treatmentChecked, setTreatmentChecked,
+    treatmentCheckedAfter, setTreatmentCheckedAfter, closingChecked, setClosingChecked,
+    procedureState, setProcedureState, closedCases, setClosedCases,
+    equipmentStatus, setEquipmentStatus, repairs, setRepairs,
+    labReceived, setLabReceived, sterPacks, setSterPacks,
+  } = day;
 
   const ActiveComponent = activeArea ? AREAS[activeArea].component() : null;
 
@@ -125,6 +156,13 @@ function Shell({ user, onLogout, lang, setLang }) {
   }, [appointments, procedureState, closedCases, treatmentChecked, treatmentCheckedAfter, readinessChecked, equipmentStatus, sterPacks, clinicStatus, closingChecked, repairs, labReceived]);
 
   function goTo(area, subtab, apptId, room) {
+    // Every jump in the app goes through here — the NOW card, attention
+    // items, chair tiles, journey links. Any of them can name an area this
+    // role has no access to (the engine describes the whole clinic, not
+    // one person's part of it), and following that would drop somebody
+    // into a screen their own sidebar says does not exist. Refuse, rather
+    // than half-navigate.
+    if (!window.KuBi.canReach(user.role, area)) return;
     setActiveArea(area);
     setNavTarget({ subtab: subtab || null, apptId: apptId || null, room: room || null });
   }
@@ -421,8 +459,9 @@ function Shell({ user, onLogout, lang, setLang }) {
 function App() {
   const [user, setUser] = React.useState(null);
   const [lang, setLang] = React.useState('en');
+  const day = useClinicDay();
   if (!user) return <LoginScreen onLogin={setUser} lang={lang} setLang={setLang} />;
-  return <Shell user={user} onLogout={function () { setUser(null); }} lang={lang} setLang={setLang} />;
+  return <Shell user={user} onLogout={function () { setUser(null); }} lang={lang} setLang={setLang} day={day} />;
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);

@@ -13,7 +13,7 @@ React is bundled in.
 ```bash
 npm install
 npm run build     # compiles src/ -> KuBi.html
-npm test          # builds, then runs 94 journey checks + 7 bundle checks
+npm test          # builds, then runs 118 journey checks + 7 bundle checks
 ```
 
 `KuBi.html` is generated. Edit `src/`, never the bundle.
@@ -37,6 +37,7 @@ src/
   inventory.js         Materials mapped to procedures
   nextAction.js        THE PRIORITY ENGINE — one action from 8 states
   mis.js               Management KPI computation
+  dayStore.js          The operating day, as stored and restored
   sheetsSync.js        Google Sheets transport (the only network code)
   history.js           Daily snapshots + trends (STORAGE ADAPTER HERE)
 
@@ -108,7 +109,27 @@ window.KuBi.SHEETS_CONFIG = { url: '<web app /exec URL>', token: '<token>' };
 
 `apps-script/KuBi_History.gs` is the other half — paste it into the
 sheet's Apps Script editor and deploy it as a web app. Deployment steps
-are in the file's header comment.
+are in the file's header comment. It keeps two sheets: **KuBi History**,
+one row per finished day, and **KuBi Day**, the day in progress.
+
+The day in progress is what makes a refresh survivable. `src/dayStore.js`
+lists the twelve pieces of state that make up a day; `useClinicDay()` in
+App.jsx reads them back on load and writes them through, 2.5s after the
+last change so a burst of ticks is one write, not twenty.
+
+Two rules hold that together, and both are tested:
+
+- **Never write before reading.** On load the state is seed data; saving
+  is armed only once the read has come back. Otherwise the first write
+  would overwrite a real day with the seed.
+- **Unreachable is not empty.** A failed read leaves saving disarmed, so a
+  clinic with no internet keeps working in memory and cannot clobber the
+  stored day when the connection returns. Reaching the sheet and finding
+  nothing is a different answer, and does arm saving — otherwise the first
+  day of use would never save at all.
+
+What is NOT stored: which screen somebody was looking at. After a refresh
+you land on your own home screen, not the last person's.
 
 **Leave `SHEETS_CONFIG` empty and nothing reaches the network.** History
 then lives for the session only, exactly as it did before, and MIS

@@ -49,7 +49,8 @@ window.KuBi.historySync = (function () {
       setTimeout(function () { finish(null); }, TIMEOUT_MS);
 
       let url = c.url + '?action=' + encodeURIComponent(opts.action) +
-                '&token=' + encodeURIComponent(c.token || '');
+                '&token=' + encodeURIComponent(c.token || '') +
+                (opts.extra || '');
       const init = { method: opts.body ? 'POST' : 'GET' };
       if (opts.body) {
         // text/plain keeps this a simple request — no CORS preflight.
@@ -87,6 +88,38 @@ window.KuBi.historySync = (function () {
 
     remove: function (date) {
       return request({ action: 'historyRemove', body: { date: date } })
+        .then(function (json) { return !!json; });
+    },
+
+    // ---- the live operating day ---------------------------------------
+    // Same transport, different question: history is "what did past days
+    // amount to", this is "what is happening today", so a refresh does not
+    // lose the morning.
+
+    // null means UNREACHABLE. Reaching the sheet resolves to
+    // { record: <the day> } or { record: null } when nothing is stored yet.
+    // The two must stay distinguishable: on the first day of use nothing is
+    // stored, and collapsing that into "unreachable" would mean the app
+    // never dares to write, so the day would never be saved at all.
+    dayLoad: function (date) {
+      return request({ action: 'dayGet', extra: '&date=' + encodeURIComponent(date) })
+        .then(function (json) {
+          if (!json) return null;
+          return { record: json.record || null };
+        });
+    },
+
+    // Resolves true only on confirmed success, so the caller knows whether
+    // the day is safely stored or still only in this browser.
+    daySave: function (date, state) {
+      let payload;
+      try {
+        payload = JSON.stringify(state);
+      } catch (e) {
+        return Promise.resolve(false);   // circular or unserialisable: never throw
+      }
+      if (payload.length > window.KuBi.DAY_MAX_CHARS) return Promise.resolve(false);
+      return request({ action: 'dayPut', body: { date: date, state: state } })
         .then(function (json) { return !!json; });
     },
   };

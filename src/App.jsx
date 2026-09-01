@@ -104,7 +104,7 @@ function useClinicDay() {
   const [labReceived, setLabReceived] = React.useState({});
   const [sterPacks, setSterPacks] = React.useState(window.KuBi.STER_PACKS || []);
 
-  return {
+  const day = {
     clinicStatus: clinicStatus, setClinicStatus: setClinicStatus,
     readinessChecked: readinessChecked, setReadinessChecked: setReadinessChecked,
     appointments: appointments, setAppointments: setAppointments,
@@ -118,6 +118,50 @@ function useClinicDay() {
     labReceived: labReceived, setLabReceived: setLabReceived,
     sterPacks: sterPacks, setSterPacks: setSterPacks,
   };
+
+  // ---- keeping the day across a refresh -------------------------------
+  // Two rules hold this together:
+  //
+  //   1. Never write before reading. On load the state is seed data. If a
+  //      save fired first it would overwrite a real day with the seed —
+  //      the exact accident this feature exists to prevent. So saving is
+  //      armed only once the read has come back, one way or the other.
+  //
+  //   2. Never treat unreachable as empty. A failed read leaves the seed
+  //      in place and leaves saving DISARMED, so a clinic with no internet
+  //      keeps working in memory and cannot clobber the stored day when
+  //      the connection returns.
+  const armed = React.useRef(false);
+  const saveTimer = React.useRef(null);
+
+  React.useEffect(function () {
+    if (!window.KuBi.historySync.isConfigured()) return;
+    let cancelled = false;
+    window.KuBi.historySync.dayLoad(window.KuBi.operatingDate()).then(function (result) {
+      if (cancelled) return;
+      if (result === null) return;            // unreachable: stay in memory, stay disarmed
+      // Reached the sheet. Either it holds today, or it holds nothing yet —
+      // both mean writing is safe. Only the first restores anything.
+      if (window.KuBi.dayIsForToday(result.record)) window.KuBi.restoreDay(day, result.record.state);
+      armed.current = true;
+    });
+    return function () { cancelled = true; };
+  }, []);
+
+  // Staff tick things quickly; one write per tick would be a request per
+  // keystroke. Settle first, then write once.
+  const DEBOUNCE_MS = 2500;
+  const watched = window.KuBi.DAY_FIELDS.map(function (f) { return day[f]; });
+  React.useEffect(function () {
+    if (!armed.current || !window.KuBi.historySync.isConfigured()) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(function () {
+      window.KuBi.historySync.daySave(window.KuBi.operatingDate(), window.KuBi.snapshotDay(day));
+    }, DEBOUNCE_MS);
+    return function () { if (saveTimer.current) clearTimeout(saveTimer.current); };
+  }, watched);
+
+  return day;
 }
 
 function Shell({ user, onLogout, lang, setLang, day }) {

@@ -23,7 +23,8 @@
  */
 
 var TOKEN = '';                    // must match SHEETS_CONFIG.token in KuBi
-var SHEET_NAME = 'KuBi History';
+var SHEET_NAME = 'KuBi History';   // one row per finished day
+var DAY_SHEET_NAME = 'KuBi Day';   // the day in progress, so a refresh loses nothing
 
 // Column order is the contract with buildSnapshot() in src/history.js.
 // Append new fields at the END so existing rows keep their meaning.
@@ -147,6 +148,57 @@ function historyRemove_(date) {
   }
 }
 
+// ── the live operating day ───────────────────────────────────────────
+// One row per date holding the day as JSON. History answers "what did that
+// day amount to"; this answers "what is happening today", so a browser
+// refresh at three in the afternoon does not lose the morning.
+var DAY_HEADERS = ['date', 'state', 'updatedAt'];
+
+function daySheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(DAY_SHEET_NAME);
+  if (!sh) {
+    sh = ss.insertSheet(DAY_SHEET_NAME);
+    sh.appendRow(DAY_HEADERS);
+    sh.setFrozenRows(1);
+    sh.getRange('A:A').setNumberFormat('@');
+    sh.getRange('B:B').setNumberFormat('@');   // JSON is text, never a formula
+  }
+  return sh;
+}
+
+function dayGet_(date) {
+  if (!date) return { status: 'error', message: 'date required' };
+  var sh = daySheet_();
+  var at = findRow_(sh, String(date));
+  if (!at) return { status: 'ok', record: null };
+  var raw = sh.getRange(at, 2).getValue();
+  var state;
+  try {
+    state = JSON.parse(raw);
+  } catch (e) {
+    // A corrupt row must not take the clinic down: report nothing stored.
+    return { status: 'ok', record: null };
+  }
+  return { status: 'ok', record: { date: dateKey_(sh.getRange(at, 1).getValue()), state: state } };
+}
+
+function dayPut_(date, state) {
+  if (!date) return { status: 'error', message: 'date required' };
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(20000); } catch (e) { return { status: 'error', message: 'busy' }; }
+  try {
+    var sh = daySheet_();
+    var row = [String(date), JSON.stringify(state), new Date()];
+    var at = findRow_(sh, String(date));
+    if (at) sh.getRange(at, 1, 1, DAY_HEADERS.length).setValues([row]);
+    else sh.appendRow(row);
+    return { status: 'ok', date: date, replaced: !!at };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 // ── entry points ─────────────────────────────────────────────────────
 function doGet(e) {
   try {
@@ -154,6 +206,7 @@ function doGet(e) {
     if (p.action === 'ping') return jsonOut_({ status: 'ok', app: 'KuBi History', version: 1 });
     if (!authed_(p.token)) return jsonOut_({ status: 'error', message: 'unauthorized' });
     if (p.action === 'historyAll') return jsonOut_(historyAll_());
+    if (p.action === 'dayGet') return jsonOut_(dayGet_(p.date));
     return jsonOut_({ status: 'error', message: 'unknown action' });
   } catch (err) {
     return jsonOut_({ status: 'error', message: String(err) });
@@ -172,6 +225,7 @@ function doPost(e) {
 
     if (p.action === 'historyPut') return jsonOut_(historyPut_(body.snapshot));
     if (p.action === 'historyRemove') return jsonOut_(historyRemove_(body.date));
+    if (p.action === 'dayPut') return jsonOut_(dayPut_(body.date, body.state));
     return jsonOut_({ status: 'error', message: 'unknown action' });
   } catch (err) {
     return jsonOut_({ status: 'error', message: String(err) });
@@ -181,5 +235,6 @@ function doPost(e) {
 /** Run once from the editor to create the sheet and confirm access. */
 function setup() {
   sheet_();
-  Logger.log('Ready. Rows on file: ' + historyAll_().rows.length);
+  daySheet_();
+  Logger.log('Ready. Days on file: ' + historyAll_().rows.length);
 }

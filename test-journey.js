@@ -519,6 +519,92 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   check('A patient seen this month is not lapsed',
         !K.isLapsed({ patient: 'X', lastVisit: K.operatingDate(new Date(Date.now() - 5 * 86400000)), started: true }));
 
+  // 28. THE DAY, KEPT ACROSS A REFRESH. Stubbed fetch throughout — the
+  //     suite never touches the network or a real sheet.
+  const dayCfg = w.KuBi.SHEETS_CONFIG;
+  const today = K.operatingDate();
+
+  const liveDay = {
+    clinicStatus: { open: true, by: 'Priya Sharma', at: new Date() },
+    readinessChecked: { 'staff_entry-0-0': { by: 'Ramesh Yadav', at: new Date() } },
+    appointments: [{ id: 'A1', patient: 'Arjun Prasad', status: 'waiting', chair: 1,
+                     procedureType: 'RCT', time: '09:30', statusAt: new Date(Date.now() - 20 * 60000) }],
+    treatmentChecked: { A1: { 0: true } },
+    treatmentCheckedAfter: {}, closingChecked: {},
+    procedureState: { A1: { startedAt: new Date(), startedBy: 'Dr. Ananya Rao' } },
+    closedCases: {}, equipmentStatus: { autoclave: { ok: false, note: 'x', at: new Date() } },
+    repairs: [{ id: 'R1', what: 'Tap', place: 'washroom', kind: 'plumbing', at: new Date(), done: false }],
+    labReceived: { A7: true }, sterPacks: [],
+  };
+
+  // A round trip through JSON is what the sheet actually stores.
+  const wire = JSON.parse(JSON.stringify(K.snapshotDay(liveDay)));
+  check('Every day field is carried', K.DAY_FIELDS.every(f => f in wire), K.DAY_FIELDS.length + ' fields');
+  check('Dates survive as usable dates',
+        !isNaN(new Date(wire.clinicStatus.at).getTime()) &&
+        Math.round((Date.now() - new Date(wire.appointments[0].statusAt).getTime()) / 60000) === 20,
+        'waiting ' + Math.round((Date.now() - new Date(wire.appointments[0].statusAt).getTime()) / 60000) + ' min');
+  check('A restored waiting patient still ages',
+        K.computeAttentionItems(wire.appointments, {}, {}, wire.clinicStatus, {}, {}, {}, [], {})
+         .some(i => i.kind === 'waitingTooLong'));
+
+  // Restoring must not blank a field the stored record predates.
+  const applied = [];
+  const fakeDay = {};
+  K.DAY_FIELDS.forEach(f => { fakeDay['set' + f[0].toUpperCase() + f.slice(1)] = v => applied.push(f); });
+  K.restoreDay(fakeDay, { clinicStatus: wire.clinicStatus, repairs: wire.repairs });
+  check('Only stored fields are restored', applied.length === 2 && applied.indexOf('sterPacks') === -1,
+        applied.join(', '));
+
+  // Yesterday's clinic must never load over today's.
+  check('A record for another date is refused',
+        K.dayIsForToday({ date: today }) === true &&
+        K.dayIsForToday({ date: '2020-01-01' }) === false &&
+        K.dayIsForToday(null) === false);
+
+  // Transport: unreachable is not empty, and a day too big is refused
+  // rather than written half-way.
+  w.KuBi.SHEETS_CONFIG = { url: 'https://example.invalid/exec', token: 't' };
+  let sent = [];
+  w.fetch = (url, init) => { sent.push(url); return Promise.reject(new Error('offline')); };
+  const offlineLoad = await w.KuBi.historySync.dayLoad(today);
+  check('An unreachable sheet returns null, not an empty day', offlineLoad === null);
+  const offlineSave = await w.KuBi.historySync.daySave(today, wire);
+  check('A failed save reports failure', offlineSave === false);
+
+  w.fetch = (url, init) => {
+    sent.push(url);
+    if (/action=dayGet/.test(url)) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok', record: { date: today, state: wire } }) });
+    }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+  };
+  const rec = await w.KuBi.historySync.dayLoad(today);
+  check('A stored day comes back whole',
+        !!rec && !!rec.record && rec.record.date === today && rec.record.state.clinicStatus.open === true);
+
+  // The first day of use stores nothing. If that were reported the same way
+  // as "cannot reach the sheet", the app would never dare to write and the
+  // day would never be saved at all — which is exactly what happened the
+  // first time this was wired up.
+  w.fetch = (url) => { sent.push(url); return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok', record: null }) }); };
+  const firstDay = await w.KuBi.historySync.dayLoad(today);
+  check('An empty sheet is distinguishable from an unreachable one',
+        firstDay !== null && firstDay.record === null,
+        firstDay === null ? 'reported as unreachable' : 'reported as empty');
+  sent = [];
+  const big = Object.assign({}, wire, { closingChecked: { blob: 'x'.repeat(K.DAY_MAX_CHARS + 100) } });
+  const tooBig = await w.KuBi.historySync.daySave(today, big);
+  check('An oversized day is refused, not truncated', tooBig === false && sent.length === 0,
+        sent.length + ' requests sent');
+
+  w.KuBi.SHEETS_CONFIG = { url: '', token: '' };
+  check('With no sheet configured nothing is sent',
+        (await w.KuBi.historySync.daySave(today, wire)) === false &&
+        (await w.KuBi.historySync.dayLoad(today)) === null);
+  w.KuBi.SHEETS_CONFIG = dayCfg;
+  delete w.fetch;
+
   // SUMMARY
   await step(() => {}, 150);
   const failed = results.filter(r => !r.pass);

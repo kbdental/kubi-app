@@ -27,7 +27,7 @@ window.KuBi.Management = function Management({ lang, appointments, treatmentChec
   // ---- derived counts --------------------------------------------------
   const readiness = window.KuBi.readinessStats(checked);
   const attention = window.KuBi.computeAttentionItems(
-    appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived
+    appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived, equipmentStatus
   );
 
   const scheduled = appointments.filter(function (a) { return a.status !== 'no_show'; }).length;
@@ -71,6 +71,13 @@ window.KuBi.Management = function Management({ lang, appointments, treatmentChec
     if (item.kind === 'caseNotClosed') return item.patient + ' — ' + t('attention.caseNotClosed', lang);
     if (item.kind === 'repairOpen') return item.what + ' — ' + t('attention.repairOpen', lang) + ' (' + item.days + ' ' + t('repair.days', lang) + ')';
     if (item.kind === 'labLate') return item.patient + ' — ' + (item.item[lang] || item.item.en) + ' ' + t('attention.labLate', lang);
+    if (item.kind === 'equipmentDown') {
+      const nm = item.equipItem
+        ? (item.equipItem.isChair ? t('clinic.room', lang) + ' ' + item.equipItem.room
+                                  : (item.equipItem.name[lang] || item.equipItem.name.en))
+        : '';
+      return nm + ' — ' + t('now.equipmentDown', lang) + (item.note ? ': ' + item.note : '');
+    }
     return '';
   }
 

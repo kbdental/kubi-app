@@ -754,7 +754,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 01 Sept 2026, 02:27 pm';
+  window.KuBi.BUILD_STAMP = 'Build: 01 Sept 2026, 02:37 pm';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -36861,7 +36861,7 @@ window.KuBi.closureGate = function (procedureType, checkedMap) {
 // enough context (apptId, subtab, room) to jump directly to the problem.
 
 window.KuBi = window.KuBi || {};
-window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfter, readinessChecked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived) {
+window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfter, readinessChecked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived, equipmentStatus) {
   const items = [];
   const now = Date.now();
   const afterChecked = treatmentCheckedAfter || {};
@@ -36880,7 +36880,8 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
     treatmentNotReady: 'lead_dental_assistant',
     caseNotClosed: 'lead_dentist',
     repairOpen: 'clinic_manager',
-    labLate: 'front_desk_receptionist'
+    labLate: 'front_desk_receptionist',
+    equipmentDown: 'lead_dental_assistant'
   };
 
   // ---- CLINIC: rooms not ready ----------------------------------------
@@ -36973,6 +36974,29 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
         });
       }
     }
+  });
+
+  // ---- CLINIC: equipment that is not working ---------------------------
+  // Every open fault, whether or not it is what the NOW card is showing.
+  // The card names the one thing to do next; this is the list of what is
+  // wrong, and a fault demoted from the card must not disappear with it.
+  const equip = equipmentStatus || {};
+  const equipList = window.KuBi.equipmentList() || [];
+  Object.keys(equip).forEach(function (id) {
+    if (!equip[id] || equip[id].ok !== false) return;
+    const item = equipList.find(function (e) {
+      return e.id === id;
+    });
+    items.push({
+      id: 'equip-' + id,
+      area: 'clinic',
+      subtab: 'equipment',
+      room: item && item.isChair ? item.room : null,
+      kind: 'equipmentDown',
+      equipItem: item,
+      note: equip[id].note || '',
+      owner: OWNER.equipmentDown
+    });
   });
 
   // ---- LAB: promised, and still not here ------------------------------
@@ -37509,13 +37533,37 @@ window.KuBi.nextAction = function (ctx) {
     };
   }
 
-  // 1. Equipment fault — a broken machine stops work regardless of who
-  //    is in the chair, so it outranks patient flow.
-  const brokenId = Object.keys(equipment).find(function (k) {
-    return equipment[k] && equipment[k].ok === false;
+  // 1. Equipment fault that is stopping work RIGHT NOW.
+  //
+  //    Not every fault is. A broken chair in room 3 does not stop the
+  //    patient sitting in room 1, and treating it as though it did meant
+  //    one unfixed fault said the same thing on this card all day —
+  //    through arrivals, through treatment, through closing — until
+  //    somebody marked it working. A card that never changes stops being
+  //    read, which costs more than the fault it was reporting.
+  //
+  //    So: shared equipment is clinic-wide and still outranks everything.
+  //    A chair only outranks patient flow when somebody is in it. Faults
+  //    that are not blocking still appear in the attention list, so
+  //    nothing is lost — only demoted.
+  const equipList = window.KuBi.equipmentList() || [];
+  const occupiedChairs = {};
+  appts.forEach(function (a) {
+    if (a.status === 'in_chair' || a.status === 'in_treatment') occupiedChairs[a.chair] = true;
   });
+  function faultIsBlocking(id) {
+    const item = equipList.find(function (e) {
+      return e.id === id;
+    });
+    if (!item) return true; // unknown kit: assume it matters
+    if (!item.isChair) return true; // shared equipment is clinic-wide
+    return !!occupiedChairs[item.room];
+  }
+  const brokenId = Object.keys(equipment).filter(function (k) {
+    return equipment[k] && equipment[k].ok === false;
+  }).find(faultIsBlocking);
   if (brokenId) {
-    const item = (window.KuBi.equipmentList() || []).find(function (e) {
+    const item = equipList.find(function (e) {
       return e.id === brokenId;
     });
     return {
@@ -38399,7 +38447,7 @@ window.KuBi.buildSnapshot = function (ctx, closedProperly) {
   const d = window.KuBi.misToday(ctx);
   const readiness = window.KuBi.readinessStats(ctx.readinessChecked || {});
   const counts = window.KuBi.attendanceCounts();
-  const attention = window.KuBi.computeAttentionItems(ctx.appointments, ctx.treatmentCheckedAfter, ctx.readinessChecked, ctx.clinicStatus, ctx.procedureState, ctx.closedCases, ctx.treatmentChecked, ctx.repairs, ctx.labReceived);
+  const attention = window.KuBi.computeAttentionItems(ctx.appointments, ctx.treatmentCheckedAfter, ctx.readinessChecked, ctx.clinicStatus, ctx.procedureState, ctx.closedCases, ctx.treatmentChecked, ctx.repairs, ctx.labReceived, ctx.equipmentStatus);
   return {
     date: window.KuBi.operatingDate(),
     closedProperly: !!closedProperly,
@@ -38713,7 +38761,7 @@ window.KuBi.Today = function Today({
   const t = window.KuBi.t;
   const [attentionOpen, setAttentionOpen] = React.useState(false);
   const readiness = window.KuBi.readinessStats(checked);
-  const attentionItems = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived);
+  const attentionItems = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived, equipmentStatus);
   // Five, and never a sixth. Past that it stops being "what needs
   // attention" and becomes a to-do list, which staff stop reading. The
   // count above still reports the true total.
@@ -38731,6 +38779,10 @@ window.KuBi.Today = function Today({
     if (item.kind === 'caseNotClosed') return item.patient + ' — ' + t('attention.caseNotClosed', lang);
     if (item.kind === 'repairOpen') return item.what + ' — ' + t('attention.repairOpen', lang) + ' (' + item.days + ' ' + t('repair.days', lang) + ')';
     if (item.kind === 'labLate') return item.patient + ' — ' + (item.item[lang] || item.item.en) + ' ' + t('attention.labLate', lang);
+    if (item.kind === 'equipmentDown') {
+      const nm = item.equipItem ? item.equipItem.isChair ? t('clinic.room', lang) + ' ' + item.equipItem.room : item.equipItem.name[lang] || item.equipItem.name.en : '';
+      return nm + ' — ' + t('now.equipmentDown', lang) + (item.note ? ': ' + item.note : '');
+    }
     return '';
   }
   function areaLabel(area) {
@@ -40733,7 +40785,7 @@ window.KuBi.Management = function Management({
 
   // ---- derived counts --------------------------------------------------
   const readiness = window.KuBi.readinessStats(checked);
-  const attention = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived);
+  const attention = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived, equipmentStatus);
   const scheduled = appointments.filter(function (a) {
     return a.status !== 'no_show';
   }).length;
@@ -40777,6 +40829,10 @@ window.KuBi.Management = function Management({
     if (item.kind === 'caseNotClosed') return item.patient + ' — ' + t('attention.caseNotClosed', lang);
     if (item.kind === 'repairOpen') return item.what + ' — ' + t('attention.repairOpen', lang) + ' (' + item.days + ' ' + t('repair.days', lang) + ')';
     if (item.kind === 'labLate') return item.patient + ' — ' + (item.item[lang] || item.item.en) + ' ' + t('attention.labLate', lang);
+    if (item.kind === 'equipmentDown') {
+      const nm = item.equipItem ? item.equipItem.isChair ? t('clinic.room', lang) + ' ' + item.equipItem.room : item.equipItem.name[lang] || item.equipItem.name.en : '';
+      return nm + ' — ' + t('now.equipmentDown', lang) + (item.note ? ': ' + item.note : '');
+    }
     return '';
   }
   function Metric({

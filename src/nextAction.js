@@ -28,11 +28,35 @@ window.KuBi.nextAction = function (ctx) {
     return { kind: 'openClinic', area: 'clinic', subtab: 'opening', owner: 'front_desk_receptionist' };
   }
 
-  // 1. Equipment fault — a broken machine stops work regardless of who
-  //    is in the chair, so it outranks patient flow.
-  const brokenId = Object.keys(equipment).find(function (k) { return equipment[k] && equipment[k].ok === false; });
+  // 1. Equipment fault that is stopping work RIGHT NOW.
+  //
+  //    Not every fault is. A broken chair in room 3 does not stop the
+  //    patient sitting in room 1, and treating it as though it did meant
+  //    one unfixed fault said the same thing on this card all day —
+  //    through arrivals, through treatment, through closing — until
+  //    somebody marked it working. A card that never changes stops being
+  //    read, which costs more than the fault it was reporting.
+  //
+  //    So: shared equipment is clinic-wide and still outranks everything.
+  //    A chair only outranks patient flow when somebody is in it. Faults
+  //    that are not blocking still appear in the attention list, so
+  //    nothing is lost — only demoted.
+  const equipList = window.KuBi.equipmentList() || [];
+  const occupiedChairs = {};
+  appts.forEach(function (a) {
+    if (a.status === 'in_chair' || a.status === 'in_treatment') occupiedChairs[a.chair] = true;
+  });
+  function faultIsBlocking(id) {
+    const item = equipList.find(function (e) { return e.id === id; });
+    if (!item) return true;          // unknown kit: assume it matters
+    if (!item.isChair) return true;  // shared equipment is clinic-wide
+    return !!occupiedChairs[item.room];
+  }
+  const brokenId = Object.keys(equipment).filter(function (k) {
+    return equipment[k] && equipment[k].ok === false;
+  }).find(faultIsBlocking);
   if (brokenId) {
-    const item = (window.KuBi.equipmentList() || []).find(function (e) { return e.id === brokenId; });
+    const item = equipList.find(function (e) { return e.id === brokenId; });
     return {
       kind: 'equipmentDown', equipId: brokenId, equipItem: item,
       note: equipment[brokenId].note || '',

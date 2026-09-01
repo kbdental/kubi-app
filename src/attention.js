@@ -8,7 +8,7 @@
 
 window.KuBi = window.KuBi || {};
 
-window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfter, readinessChecked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived) {
+window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfter, readinessChecked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived, equipmentStatus) {
   const items = [];
   const now = Date.now();
   const afterChecked = treatmentCheckedAfter || {};
@@ -28,6 +28,7 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
     caseNotClosed: 'lead_dentist',
     repairOpen: 'clinic_manager',
     labLate: 'front_desk_receptionist',
+    equipmentDown: 'lead_dental_assistant',
   };
 
   // ---- CLINIC: rooms not ready ----------------------------------------
@@ -81,6 +82,23 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
         items.push({ id: 'postop-' + a.id, area: 'treatment', apptId: a.id, subtab: 'after', kind: 'caseNotClosed', patient: a.patient, procedure: a.procedureType, owner: OWNER.caseNotClosed });
       }
     }
+  });
+
+  // ---- CLINIC: equipment that is not working ---------------------------
+  // Every open fault, whether or not it is what the NOW card is showing.
+  // The card names the one thing to do next; this is the list of what is
+  // wrong, and a fault demoted from the card must not disappear with it.
+  const equip = equipmentStatus || {};
+  const equipList = window.KuBi.equipmentList() || [];
+  Object.keys(equip).forEach(function (id) {
+    if (!equip[id] || equip[id].ok !== false) return;
+    const item = equipList.find(function (e) { return e.id === id; });
+    items.push({
+      id: 'equip-' + id, area: 'clinic', subtab: 'equipment',
+      room: item && item.isChair ? item.room : null,
+      kind: 'equipmentDown', equipItem: item, note: equip[id].note || '',
+      owner: OWNER.equipmentDown,
+    });
   });
 
   // ---- LAB: promised, and still not here ------------------------------

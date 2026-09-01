@@ -26,7 +26,7 @@ window.KuBi.Today = function Today({ currentUser, lang, clinicStatus, appointmen
   const [attentionOpen, setAttentionOpen] = React.useState(false);
 
   const readiness = window.KuBi.readinessStats(checked);
-  const attentionItems = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived);
+  const attentionItems = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived, equipmentStatus);
   // Five, and never a sixth. Past that it stops being "what needs
   // attention" and becomes a to-do list, which staff stop reading. The
   // count above still reports the true total.
@@ -43,6 +43,13 @@ window.KuBi.Today = function Today({ currentUser, lang, clinicStatus, appointmen
     if (item.kind === 'caseNotClosed') return item.patient + ' — ' + t('attention.caseNotClosed', lang);
     if (item.kind === 'repairOpen') return item.what + ' — ' + t('attention.repairOpen', lang) + ' (' + item.days + ' ' + t('repair.days', lang) + ')';
     if (item.kind === 'labLate') return item.patient + ' — ' + (item.item[lang] || item.item.en) + ' ' + t('attention.labLate', lang);
+    if (item.kind === 'equipmentDown') {
+      const nm = item.equipItem
+        ? (item.equipItem.isChair ? t('clinic.room', lang) + ' ' + item.equipItem.room
+                                  : (item.equipItem.name[lang] || item.equipItem.name.en))
+        : '';
+      return nm + ' — ' + t('now.equipmentDown', lang) + (item.note ? ': ' + item.note : '');
+    }
     return '';
   }
 

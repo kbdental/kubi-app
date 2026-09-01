@@ -668,6 +668,35 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   check('KNOWN GAP: staff numbers are fixed, not operational',
         beforeCounts === afterAnything, beforeCounts);
 
+  // 30. A FAULT ONLY OUTRANKS PATIENT FLOW WHEN IT IS ACTUALLY IN THE WAY.
+  //     One broken chair used to hold the NOW card for the whole clinic,
+  //     all day, through arrivals and treatment, until somebody marked it
+  //     working — so the card said the same thing for hours and stopped
+  //     being read.
+  const eqOpen = { open: true, by: 'X', at: new Date() };
+  const chairOne = [{ id: 'E1', patient: 'Arjun', chair: 1, status: 'in_chair', procedureType: 'RCT', time: '09:30' }];
+  const chairThree = [{ id: 'E3', patient: 'Kabir', chair: 3, status: 'in_chair', procedureType: 'RCT', time: '10:45' }];
+  const brokenChair3 = { chair_3: { ok: false, note: 'Suction issue' } };
+  const brokenShared = { autoclave: { ok: false, note: 'Cycle fails' } };
+  const eqAsk = (appts, equip) => K.nextAction({ clinicStatus: eqOpen, appointments: appts,
+                                                 equipmentStatus: equip, readinessChecked: {}, treatmentChecked: {} }).kind;
+  const eqAttention = equip => K.computeAttentionItems([], {}, {}, eqOpen, {}, {}, {}, [], {}, equip)
+                                .filter(i => i.kind === 'equipmentDown').length;
+
+  check('A broken empty chair does not outrank the patient in another',
+        eqAsk(chairOne, brokenChair3) !== 'equipmentDown', eqAsk(chairOne, brokenChair3));
+  check('A broken chair DOES outrank the patient sitting in it',
+        eqAsk(chairThree, brokenChair3) === 'equipmentDown');
+  check('Shared equipment still outranks patient flow',
+        eqAsk(chairOne, brokenShared) === 'equipmentDown');
+  check('Unrecognised equipment is assumed to matter',
+        eqAsk(chairOne, { mystery_machine: { ok: false, note: '?' } }) === 'equipmentDown');
+  // Demoting must not hide it: whatever the card shows, the fault is listed.
+  check('A demoted fault still needs attention', eqAttention(brokenChair3) === 1);
+  check('Every open fault is listed, not just the loudest',
+        eqAttention(Object.assign({}, brokenChair3, brokenShared)) === 2);
+  check('A working clinic lists no faults', eqAttention({ chair_2: { ok: true } }) === 0);
+
   // SUMMARY
   await step(() => {}, 150);
   const failed = results.filter(r => !r.pass);

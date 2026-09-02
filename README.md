@@ -351,6 +351,11 @@ through on change. Configure it in `src/sheetsSync.js`:
 window.KuBi.SHEETS_CONFIG = { url: '<web app /exec URL>', token: '<token>' };
 ```
 
+**See [SECURITY.md](SECURITY.md) before production deployment.** The shared
+token below is adequate for a pilot and is not a finished security
+architecture: it is embedded in a file that is copied onto clinic computers,
+and the day it protects contains patient names.
+
 The clinic's own deployment is already configured in `SHEETS_CONFIG`. The
 URL and token are in this repo and inside `KuBi.html`, because a file
 staff open by double-clicking has nowhere else to keep them. Treat both as

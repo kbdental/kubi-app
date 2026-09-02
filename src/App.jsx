@@ -102,6 +102,7 @@ function useClinicDay() {
   const [equipmentStatus, setEquipmentStatus] = React.useState(window.KuBi.EQUIPMENT_STATUS_SEED || {});
   const [repairs, setRepairs] = React.useState(window.KuBi.REPAIRS_SEED || []);
   const [labReceived, setLabReceived] = React.useState({});
+  const [audit, setAudit] = React.useState([]);
   const [sterPacks, setSterPacks] = React.useState(window.KuBi.STER_PACKS || []);
 
   const day = {
@@ -116,6 +117,7 @@ function useClinicDay() {
     equipmentStatus: equipmentStatus, setEquipmentStatus: setEquipmentStatus,
     repairs: repairs, setRepairs: setRepairs,
     labReceived: labReceived, setLabReceived: setLabReceived,
+    audit: audit, setAudit: setAudit,
     sterPacks: sterPacks, setSterPacks: setSterPacks,
   };
 
@@ -177,6 +179,7 @@ function Shell({ user, onLogout, lang, setLang, day }) {
     procedureState, setProcedureState, closedCases, setClosedCases,
     equipmentStatus, setEquipmentStatus, repairs, setRepairs,
     labReceived, setLabReceived, sterPacks, setSterPacks,
+    audit, setAudit,
   } = day;
 
   const ActiveComponent = activeArea ? AREAS[activeArea].component() : null;
@@ -199,6 +202,18 @@ function Shell({ user, onLogout, lang, setLang, day }) {
     });
   }, [appointments, procedureState, closedCases, treatmentChecked, treatmentCheckedAfter, readinessChecked, equipmentStatus, sterPacks, clinicStatus, closingChecked, repairs, labReceived]);
 
+  // Every change the clinic makes passes through here on its way to
+  // state. Nobody is asked for anything: the actor is whoever is signed
+  // in and the time is now.
+  function note(area, action, subject, detail) {
+    setAudit(function (prev) {
+      return window.KuBi.auditAppend(prev, {
+        by: user.name, area: area, action: action,
+        subject: subject || null, detail: detail || null,
+      });
+    });
+  }
+
   function goTo(area, subtab, apptId, room) {
     // Every jump in the app goes through here — the NOW card, attention
     // items, chair tiles, journey links. Any of them can name an area this
@@ -211,7 +226,10 @@ function Shell({ user, onLogout, lang, setLang, day }) {
     setNavTarget({ subtab: subtab || null, apptId: apptId || null, room: room || null });
   }
 
-  function openClinic() { setClinicStatus({ open: true, by: user.name, at: new Date() }); }
+  function openClinic() {
+    setClinicStatus({ open: true, by: user.name, at: new Date() });
+    note('clinic', 'clinicOpened');
+  }
   function closeClinic() {
     // The day's figures are final at close — capture them for MIS trends.
     window.KuBi.captureDay({
@@ -230,8 +248,10 @@ function Shell({ user, onLogout, lang, setLang, day }) {
     }, true);
     setClinicStatus({ open: false, by: user.name, at: new Date() });
     setClosingChecked({});
+    note('clinic', 'clinicClosed');
   }
   function toggleClosing(itemId) {
+    note('closure', closingChecked[itemId] ? 'closingUnchecked' : 'closingChecked', itemId);
     setClosingChecked(function (prev) {
       const next = Object.assign({}, prev);
       next[itemId] = !next[itemId];
@@ -239,6 +259,7 @@ function Shell({ user, onLogout, lang, setLang, day }) {
     });
   }
   function toggleReadiness(key, byName) {
+    note('readiness', readinessChecked[key] ? 'readinessUnchecked' : 'readinessChecked', key);
     setReadinessChecked(function (prev) {
       const next = Object.assign({}, prev);
       if (next[key]) {
@@ -250,11 +271,13 @@ function Shell({ user, onLogout, lang, setLang, day }) {
     });
   }
   function setApptStatus(id, status) {
+    note('patients', 'statusChanged', id, status);
     setAppointments(function (prev) {
       return prev.map(function (a) { return a.id === id ? Object.assign({}, a, { status: status, statusAt: new Date() }) : a; });
     });
   }
   function startProcedure(apptId) {
+    note('treatment', 'procedureStarted', apptId);
     setProcedureState(function (prev) {
       const next = Object.assign({}, prev);
       next[apptId] = { startedAt: new Date(), startedBy: user.name, completedAt: null };
@@ -263,6 +286,7 @@ function Shell({ user, onLogout, lang, setLang, day }) {
     setApptStatus(apptId, 'in_treatment');
   }
   function completeProcedure(apptId) {
+    note('treatment', 'procedureCompleted', apptId);
     setProcedureState(function (prev) {
       const next = Object.assign({}, prev);
       const cur = Object.assign({}, next[apptId] || {});
@@ -273,6 +297,7 @@ function Shell({ user, onLogout, lang, setLang, day }) {
   }
 
   function advancePack(packId) {
+    note('sterilization', 'packAdvanced', packId);
     setSterPacks(function (prev) {
       return prev.map(function (p) {
         if (p.id !== packId) return p;
@@ -289,6 +314,7 @@ function Shell({ user, onLogout, lang, setLang, day }) {
   // the preparation visit is received before the fitting, which is a
   // different appointment entirely.
   function markLabReceived(labId) {
+    note('inventory', 'labReceived', labId);
     setLabReceived(function (prev) {
       const next = Object.assign({}, prev);
       next[labId] = true;
@@ -297,6 +323,7 @@ function Shell({ user, onLogout, lang, setLang, day }) {
   }
 
   function reportRepair(kind, place, what) {
+    note('exceptions', 'repairReported', place, what);
     setRepairs(function (prev) {
       return prev.concat([{
         id: 'R' + (prev.length + 1) + '-' + prev.length,
@@ -306,6 +333,7 @@ function Shell({ user, onLogout, lang, setLang, day }) {
     });
   }
   function markRepairFixed(id) {
+    note('exceptions', 'repairFixed', id);
     setRepairs(function (prev) {
       return prev.map(function (r) {
         return r.id === id ? Object.assign({}, r, { done: true, doneAt: new Date() }) : r;
@@ -313,15 +341,20 @@ function Shell({ user, onLogout, lang, setLang, day }) {
     });
   }
 
-  function setEquipment(id, ok, note) {
+  // The parameter is called `reason` rather than `note`: the audit helper
+  // is also called note(), and shadowing it here would silently drop every
+  // equipment entry.
+  function setEquipment(id, ok, reason) {
     setEquipmentStatus(function (prev) {
       const next = Object.assign({}, prev);
-      next[id] = { ok: ok, note: note || '', at: new Date(), by: user.name };
+      next[id] = { ok: ok, note: reason || '', at: new Date(), by: user.name };
       return next;
     });
+    note('equipment', ok ? 'equipmentWorking' : 'equipmentFault', id, reason || null);
   }
 
   function closeCase(apptId) {
+    note('closure', 'caseClosed', apptId);
     setClosedCases(function (prev) {
       const next = Object.assign({}, prev);
       next[apptId] = { closedAt: new Date(), closedBy: user.name };
@@ -331,6 +364,7 @@ function Shell({ user, onLogout, lang, setLang, day }) {
   }
 
   function toggleTreatmentStep(apptId, stepIdx) {
+    note('treatment', 'beforeStepToggled', apptId, String(stepIdx));
     setTreatmentChecked(function (prev) {
       const next = Object.assign({}, prev);
       const apptState = Object.assign({}, next[apptId]);
@@ -340,6 +374,7 @@ function Shell({ user, onLogout, lang, setLang, day }) {
     });
   }
   function toggleTreatmentStepAfter(apptId, stepIdx) {
+    note('treatment', 'afterStepToggled', apptId, String(stepIdx));
     setTreatmentCheckedAfter(function (prev) {
       const next = Object.assign({}, prev);
       const apptState = Object.assign({}, next[apptId]);
@@ -451,6 +486,7 @@ function Shell({ user, onLogout, lang, setLang, day }) {
           sterPacks={sterPacks}
           closingChecked={closingChecked}
           repairs={repairs}
+          audit={audit}
           labReceived={labReceived}
           initialSubtab={navTarget.subtab}
           goTo={goTo}

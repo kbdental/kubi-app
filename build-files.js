@@ -8,6 +8,7 @@ module.exports = [
   'src/clinicClosing.js',
   'src/patientCheckIn.js',
   'src/treatmentChecklists.js',
+  'src/audit.js',
   'src/escalation.js',
   'src/attention.js',
   'src/equipment.js',

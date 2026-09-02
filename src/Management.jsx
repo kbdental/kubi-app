@@ -15,7 +15,7 @@ function pick(field, lang) {
   return field[lang] || field.en;
 }
 
-window.KuBi.Management = function Management({ lang, appointments, treatmentChecked, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, equipmentStatus, sterPacks, closingChecked, initialSubtab, repairs, labReceived, goTo }) {
+window.KuBi.Management = function Management({ lang, appointments, treatmentChecked, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, equipmentStatus, sterPacks, closingChecked, initialSubtab, repairs, labReceived, audit, goTo }) {
   const t = window.KuBi.t;
   const TABS = ['owner', 'mis', 'people'];
   const [subtab, setSubtab] = React.useState(initialSubtab || 'owner');
@@ -213,6 +213,60 @@ window.KuBi.Management = function Management({ lang, appointments, treatmentChec
 
       {/* MIS is management reporting, so it lives here rather than
           standing beside the clinical day as a sixth area. */}
+      {/* Who changed what, and when. Inside the Owner view rather than a
+          tab of its own: the structure is frozen, and an audit is something
+          you consult, not somewhere you work. */}
+      {subtab === 'owner' ? (function () {
+        const log = audit || [];
+        const recent = window.KuBi.auditRecent(log, 12);
+        const people = window.KuBi.auditByPerson(log);
+        const stamp = function (at) {
+          return new Date(at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        };
+        return (
+          <div className="card audit-card">
+            <div className="card-title">{t('audit.title', lang)}</div>
+            <p className="module-sub">{t('audit.subtitle', lang)}</p>
+            {log.length === 0 ? (
+              <p className="module-sub">{t('audit.none', lang)}</p>
+            ) : (
+              <React.Fragment>
+                {people.length ? (
+                  <div className="audit-people">
+                    {people.map(function (pp) {
+                      return (
+                        <span key={pp.by} className="audit-person">
+                          {pp.by} <b>{pp.changes}</b> {t(pp.changes === 1 ? 'audit.change' : 'audit.changes', lang)}
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                <ul className="audit-list">
+                  {recent.map(function (e, i) {
+                    return (
+                      <li key={i} className="audit-row">
+                        <span className="audit-when mono">{stamp(e.at)}</span>
+                        <span className="audit-what">
+                          {e.by ? <b>{e.by}</b> : null} {t('audit.' + e.action, lang)}
+                          {(function () {
+                            const label = window.KuBi.auditSubjectLabel(e, { lang: lang, t: t, appointments: appointments });
+                            return label ? <span className="audit-subject"> — {label}</span> : null;
+                          })()}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {log.length > recent.length ? (
+                  <p className="module-sub">+{log.length - recent.length} {t('audit.more', lang)}</p>
+                ) : null}
+              </React.Fragment>
+            )}
+          </div>
+        );
+      })() : null}
+
       {subtab === 'mis' ? (
         <window.KuBi.MIS
           lang={lang}

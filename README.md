@@ -13,7 +13,7 @@ React is bundled in.
 ```bash
 npm install
 npm run build     # compiles src/ -> KuBi.html
-npm test          # builds, then runs 267 journey checks + 7 bundle checks
+npm test          # builds, then runs 288 journey checks + 7 bundle checks
 ```
 
 `KuBi.html` is generated. Edit `src/`, never the bundle.
@@ -35,6 +35,7 @@ src/
   equipment.js         Equipment status list
   repairs.js           Building faults, open until fixed
   escalation.js        Who hears about a problem, and when
+  audit.js             Who changed what, and when (append-only)
   sterilization.js     Instrument pack chain
   inventory.js         Materials mapped to procedures
   nextAction.js        THE PRIORITY ENGINE — one action from 8 states
@@ -345,6 +346,40 @@ Two defects this found, both since fixed:
 - **a lab blockage had two owners**. The NOW card said Lead Dental Assistant
   while the attention list said Front Desk, for the same crown. Front Desk
   rings the lab, so the card now says so and routes to the Lab tab
+
+## Audit trail
+
+Who changed what, and when — for treatment, closure, equipment,
+sterilization, inventory, exceptions, readiness and patient status.
+
+**It cannot be derived.** The case timeline works today's entries out from
+state, which is right for a timeline. An audit cannot: state remembers only
+where things ended up. Equipment marked working, then faulty, then working
+again leaves one value and no history. So this is the one **append-only**
+record in KuBi — entries are never edited or removed, and a correction is
+another entry.
+
+**It still asks nobody for anything.** Every entry comes from an action staff
+were taking anyway: a box ticked, a button pressed, a status changed. Each
+mutating handler passes through one `note()` call; the actor is whoever is
+signed in and the time is now.
+
+Ids are stored, names are shown. `auditSubjectLabel()` turns `chair_3` into
+"Clinic 3" and a readiness key into the task itself. An id it does not
+recognise shows **nothing** rather than a key at somebody.
+
+### The ceiling is measured, not guessed
+
+The log rides with the day into one spreadsheet cell. Measured: a day with no
+audit is ~11,300 characters, an entry ~131, the budget 45,000. A cap of 400
+produced a log of 52,800 on its own — **larger than the entire budget**, so a
+busy day would have quietly failed to save, which is precisely the failure an
+audit is supposed to guard against. The cap is 200, leaving ~16% spare, and a
+test asserts a worst-case day still fits.
+
+That ceiling is a consequence of storing the day as one JSON cell. The real
+answer is an append-only audit sheet, one row per entry — part of the
+production-persistence work rather than something to bolt on here.
 
 ## Two rules that hold the design together
 

@@ -6,7 +6,7 @@
 // Google Sheet adapter history uses, and reads it back on load.
 //
 // WHAT IS STORED, AND WHAT IS NOT
-// Only the twelve pieces of state the clinic changes during a day. Which
+// Only the pieces of state the clinic changes during a day. Which
 // screen somebody was looking at is NOT stored: after a refresh you should
 // land on your own home screen, not on whatever the last person had open.
 //
@@ -36,13 +36,16 @@ window.KuBi.DAY_FIELDS = [
   'repairs',
   'labReceived',
   'sterPacks',
+  // Append-only, and part of the day so a handover or a refresh does not
+  // lose who did what.
+  'audit',
 ];
 
 // A Sheets cell holds 50,000 characters. A day should be nowhere near
 // that, but a runaway would fail the write silently, so it is checked.
 window.KuBi.DAY_MAX_CHARS = 45000;
 
-/** The twelve values, as a plain object. */
+/** Every field of the day, as a plain object. */
 window.KuBi.snapshotDay = function (day) {
   const out = {};
   window.KuBi.DAY_FIELDS.forEach(function (f) { out[f] = day[f]; });

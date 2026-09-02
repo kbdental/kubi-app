@@ -640,6 +640,23 @@
   .mis-repeat-row:last-child { border-bottom: none; }
   .mis-repeat-count { color: var(--ink-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
+  .audit-card { margin-top: 16px; }
+  .audit-people { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
+  .audit-person {
+    font-size: 12px; color: var(--ink-soft); background: var(--bg);
+    padding: 3px 10px; border-radius: 999px;
+  }
+  .audit-list { list-style: none; margin: 10px 0 0; padding: 0; }
+  .audit-row {
+    display: grid; grid-template-columns: 62px 1fr; gap: 10px; align-items: baseline;
+    padding: 6px 0; border-bottom: 1px solid var(--line);
+  }
+  .audit-row:last-child { border-bottom: none; }
+  .audit-when { font-size: 12px; color: var(--ink-soft); }
+  .audit-what { font-size: 13.5px; }
+  .audit-subject { color: var(--ink-soft); }
+  @media (max-width: 600px) { .audit-row { grid-template-columns: 1fr; gap: 2px; } }
+
   /* ---------- Case view ---------- */
   .case-view { padding: 20px; }
   .case-back { margin-bottom: 16px; }
@@ -822,7 +839,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 02 Sept 2026, 06:25 am';
+  window.KuBi.BUILD_STAMP = 'Build: 02 Sept 2026, 06:47 am';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -34937,6 +34954,106 @@ window.KuBi.STRINGS = {
     en: 'People',
     hi: 'लोग'
   },
+  'audit.title': {
+    en: 'What changed today',
+    hi: 'आज क्या बदला'
+  },
+  'audit.subtitle': {
+    en: 'Who did what, and when.',
+    hi: 'किसने क्या किया, और कब।'
+  },
+  'audit.none': {
+    en: 'Nothing has been changed yet today.',
+    hi: 'आज अभी तक कुछ नहीं बदला।'
+  },
+  'audit.changes': {
+    en: 'changes',
+    hi: 'बदलाव'
+  },
+  'audit.change': {
+    en: 'change',
+    hi: 'बदलाव'
+  },
+  'audit.more': {
+    en: 'more not shown',
+    hi: 'और दिखाए नहीं गए'
+  },
+  'audit.clinicOpened': {
+    en: 'opened the clinic',
+    hi: 'क्लिनिक खोला'
+  },
+  'audit.clinicClosed': {
+    en: 'closed the clinic',
+    hi: 'क्लिनिक बंद किया'
+  },
+  'audit.readinessChecked': {
+    en: 'ticked a readiness task',
+    hi: 'तैयारी का काम पूरा किया'
+  },
+  'audit.readinessUnchecked': {
+    en: 'un-ticked a readiness task',
+    hi: 'तैयारी का काम वापस खोला'
+  },
+  'audit.closingChecked': {
+    en: 'ticked a closing item',
+    hi: 'बंद करने का काम पूरा किया'
+  },
+  'audit.closingUnchecked': {
+    en: 'un-ticked a closing item',
+    hi: 'बंद करने का काम वापस खोला'
+  },
+  'audit.statusChanged': {
+    en: 'changed a patient status',
+    hi: 'मरीज़ की स्थिति बदली'
+  },
+  'audit.procedureStarted': {
+    en: 'started a procedure',
+    hi: 'प्रोसीज़र शुरू किया'
+  },
+  'audit.procedureCompleted': {
+    en: 'completed a procedure',
+    hi: 'प्रोसीज़र पूरा किया'
+  },
+  'audit.beforeStepToggled': {
+    en: 'changed a pre-treatment check',
+    hi: 'इलाज से पहले की जांच बदली'
+  },
+  'audit.afterStepToggled': {
+    en: 'changed a post-treatment check',
+    hi: 'इलाज के बाद की जांच बदली'
+  },
+  'audit.caseClosed': {
+    en: 'closed a case',
+    hi: 'केस बंद किया'
+  },
+  'audit.equipmentFault': {
+    en: 'reported an equipment fault',
+    hi: 'उपकरण की खराबी बताई'
+  },
+  'audit.equipmentWorking': {
+    en: 'marked equipment working',
+    hi: 'उपकरण ठीक दर्ज किया'
+  },
+  'audit.packAdvanced': {
+    en: 'moved a sterilization pack',
+    hi: 'स्टरलाइज़ेशन पैक आगे बढ़ाया'
+  },
+  'audit.labReceived': {
+    en: 'recorded lab work received',
+    hi: 'लैब का काम आया दर्ज किया'
+  },
+  'audit.repairReported': {
+    en: 'reported a fault',
+    hi: 'खराबी दर्ज की'
+  },
+  'audit.repairFixed': {
+    en: 'marked a fault fixed',
+    hi: 'खराबी ठीक दर्ज की'
+  },
+  'audit.auditTruncated': {
+    en: 'earlier entries dropped',
+    hi: 'पुरानी एंट्री हटाई गईं'
+  },
   'management.tab.mis': {
     en: 'MIS',
     hi: 'एमआईएस'
@@ -37212,6 +37329,211 @@ window.KuBi.closureGate = function (procedureType, checkedMap) {
   });
   result.canClose = allTicked && result.missing.length === 0;
   return result;
+};
+
+// ---- src/audit.js ----
+// audit.js — who changed what, and when.
+//
+// WHY THIS CANNOT BE DERIVED
+// The case timeline works out today's entries from state, which is right for
+// a timeline: it can never disagree with what the app believes. An audit
+// trail cannot work that way. State remembers only where things ended up —
+// equipment marked working, then faulty, then working again leaves one
+// value and no history. An audit has to be written at the moment of the
+// change or it is not an audit.
+//
+// So this is the one append-only record in KuBi. Entries are never edited
+// and never removed; a correction is another entry.
+//
+// IT STILL ASKS NOBODY FOR ANYTHING
+// Every entry comes from an action staff were taking anyway — a box ticked,
+// a button pressed, a status changed. The V2 principle holds: the
+// information is already being entered, and this uses it.
+
+window.KuBi = window.KuBi || {};
+
+// The six things the clinic asked to be able to account for, plus the two
+// that the day turns on. `area` is what the entry is ABOUT, not where the
+// person was standing.
+window.KuBi.AUDIT_AREAS = ['clinic',
+// opened, closed
+'readiness',
+// opening checklist
+'treatment',
+// before / after steps, procedures
+'closure',
+// cases closed, closing checklist
+'equipment',
+// faults raised and cleared
+'sterilization',
+// packs moved through the chain
+'inventory',
+// lab receipts, stock movements
+'patients',
+// status changes
+'exceptions' // repairs reported and fixed
+];
+
+// A day generates a lot of small changes, and the whole log rides along with
+// the day into ONE spreadsheet cell. Past this ceiling the OLDEST entries are
+// dropped and a marker records that it happened, because a log that silently
+// loses its beginning is worse than one that admits it.
+//
+// THE NUMBER IS NOT ARBITRARY. Measured: a full day with no audit is about
+// 11,300 characters, one entry about 131, and the cell budget is 45,000. A
+// cap of 400 produced a log of 52,800 characters on its own — larger than
+// the entire budget — so a busy day would have quietly failed to save, which
+// is precisely the failure an audit trail is supposed to protect against.
+// 200 leaves roughly a third of the budget spare for a day that grows.
+//
+// This ceiling is a consequence of storing the day as one JSON cell. The
+// real answer is an append-only audit sheet, one row per entry, which is
+// part of the production-persistence work rather than something to bolt on
+// here.
+window.KuBi.AUDIT_MAX = 200;
+
+/**
+ * Append one entry. Returns a NEW array — the log is never mutated in
+ * place, so React sees the change and nothing can quietly rewrite history.
+ */
+window.KuBi.auditAppend = function (log, entry) {
+  const list = (log || []).slice();
+  list.push({
+    at: entry.at || new Date(),
+    by: entry.by || null,
+    area: entry.area,
+    action: entry.action,
+    subject: entry.subject || null,
+    // which patient, room, item
+    detail: entry.detail || null // what it became
+  });
+  if (list.length > window.KuBi.AUDIT_MAX) {
+    // One extra, because the marker itself takes a place. Without that the
+    // log settles at MAX + 1 and the ceiling is not the ceiling.
+    const dropped = list.length - window.KuBi.AUDIT_MAX + 1;
+    const kept = list.slice(dropped);
+    kept.unshift({
+      at: kept[0] ? kept[0].at : new Date(),
+      by: null,
+      area: 'clinic',
+      action: 'auditTruncated',
+      subject: null,
+      detail: String(dropped)
+    });
+    return kept;
+  }
+  return list;
+};
+
+/** Newest first — an audit is read backwards from what just happened. */
+window.KuBi.auditRecent = function (log, limit) {
+  const list = (log || []).slice().sort(function (a, b) {
+    return new Date(b.at).getTime() - new Date(a.at).getTime();
+  });
+  return typeof limit === 'number' ? list.slice(0, limit) : list;
+};
+window.KuBi.auditForArea = function (log, area) {
+  return (log || []).filter(function (e) {
+    return e.area === area;
+  });
+};
+
+/** Everything that happened to one patient, room or item. */
+window.KuBi.auditForSubject = function (log, subject) {
+  return (log || []).filter(function (e) {
+    return e.subject === subject;
+  });
+};
+
+/** Who touched the clinic today, and how many times each. */
+window.KuBi.auditByPerson = function (log) {
+  const tally = {};
+  (log || []).forEach(function (e) {
+    if (!e.by) return;
+    tally[e.by] = (tally[e.by] || 0) + 1;
+  });
+  return Object.keys(tally).map(function (name) {
+    return {
+      by: name,
+      changes: tally[name]
+    };
+  }).sort(function (a, b) {
+    return b.changes - a.changes;
+  });
+};
+
+/**
+ * What the entry is about, in words a person uses.
+ *
+ * The log stores IDS, which is right — an id is stable and a name is not.
+ * But an id is an internal, and KuBi's rule is that internals stay behind
+ * the screen. This resolves one for display, and falls back to nothing
+ * rather than printing a key at somebody.
+ */
+window.KuBi.auditSubjectLabel = function (entry, ctx) {
+  if (!entry || !entry.subject) return null;
+  const id = entry.subject;
+  const c = ctx || {};
+  const lang = c.lang || 'en';
+  const t = c.t || function (k) {
+    return k;
+  };
+  const pick = function (f) {
+    return f ? f[lang] || f.en : null;
+  };
+
+  // A patient, by way of their appointment.
+  const appt = (c.appointments || []).find(function (a) {
+    return a.id === id;
+  });
+  if (appt) return appt.patient;
+
+  // A chair or a machine.
+  const kit = (window.KuBi.equipmentList() || []).find(function (e) {
+    return e.id === id;
+  });
+  if (kit) return kit.isChair ? t('clinic.room', lang) + ' ' + kit.room : pick(kit.name);
+
+  // A readiness task: "section — task".
+  const m = /^(.+)-g(\d+)-t(\d+)(?:-r(\d+))?$/.exec(id);
+  if (m) {
+    const section = (window.KuBi.CLINIC_READINESS || []).find(function (sec) {
+      return sec.id === m[1];
+    });
+    if (section) {
+      const group = section.groups[Number(m[2])];
+      const task = group && group.tasks[Number(m[3])];
+      const room = m[4] ? ' (' + t('clinic.room', lang) + ' ' + m[4] + ')' : '';
+      if (task) return pick(task.label) + room;
+      return pick(section.title) + room;
+    }
+  }
+
+  // A closing item.
+  const closing = (window.KuBi.CLINIC_CLOSING || []).find(function (it) {
+    return it.id === id;
+  });
+  if (closing) return pick(closing.area) + ' — ' + pick(closing.check);
+
+  // A piece of lab work.
+  const lab = window.KuBi.LAB_CASES && window.KuBi.LAB_CASES[id];
+  if (lab) return lab.patient + ' — ' + pick(lab.item);
+
+  // A place in the clinic, for a repair.
+  const place = (window.KuBi.REPAIR_PLACES ? window.KuBi.REPAIR_PLACES() : []).find(function (pl) {
+    return pl.id === id;
+  });
+  if (place) return window.KuBi.repairPlaceLabel(id, lang, t);
+
+  // A sterilization pack keeps its own printed number, which IS what staff
+  // read off the pouch.
+  const pack = (window.KuBi.STER_PACKS || []).find(function (pk) {
+    return pk.id === id;
+  });
+  if (pack) return pack.id;
+
+  // Unknown: say nothing rather than show a key.
+  return null;
 };
 
 // ---- src/escalation.js ----
@@ -39810,7 +40132,7 @@ window.KuBi.misWaiting = function (appointments) {
 // Google Sheet adapter history uses, and reads it back on load.
 //
 // WHAT IS STORED, AND WHAT IS NOT
-// Only the twelve pieces of state the clinic changes during a day. Which
+// Only the pieces of state the clinic changes during a day. Which
 // screen somebody was looking at is NOT stored: after a refresh you should
 // land on your own home screen, not on whatever the last person had open.
 //
@@ -39827,13 +40149,16 @@ window.KuBi.misWaiting = function (appointments) {
 window.KuBi = window.KuBi || {};
 
 // The day, and nothing else. Order is not meaningful; presence is.
-window.KuBi.DAY_FIELDS = ['clinicStatus', 'readinessChecked', 'appointments', 'treatmentChecked', 'treatmentCheckedAfter', 'closingChecked', 'procedureState', 'closedCases', 'equipmentStatus', 'repairs', 'labReceived', 'sterPacks'];
+window.KuBi.DAY_FIELDS = ['clinicStatus', 'readinessChecked', 'appointments', 'treatmentChecked', 'treatmentCheckedAfter', 'closingChecked', 'procedureState', 'closedCases', 'equipmentStatus', 'repairs', 'labReceived', 'sterPacks',
+// Append-only, and part of the day so a handover or a refresh does not
+// lose who did what.
+'audit'];
 
 // A Sheets cell holds 50,000 characters. A day should be nowhere near
 // that, but a runaway would fail the write silently, so it is checked.
 window.KuBi.DAY_MAX_CHARS = 45000;
 
-/** The twelve values, as a plain object. */
+/** Every field of the day, as a plain object. */
 window.KuBi.snapshotDay = function (day) {
   const out = {};
   window.KuBi.DAY_FIELDS.forEach(function (f) {
@@ -42833,6 +43158,7 @@ window.KuBi.Management = function Management({
   initialSubtab,
   repairs,
   labReceived,
+  audit,
   goTo
 }) {
   const t = window.KuBi.t;
@@ -43011,7 +43337,55 @@ window.KuBi.Management = function Management({
     className: "attention-body"
   }, /*#__PURE__*/React.createElement("span", {
     className: "attention-text"
-  }, "+", attention.length - 5, " ", t('attention.andMore', lang)))) : null))) : null, subtab === 'mis' ? /*#__PURE__*/React.createElement(window.KuBi.MIS, {
+  }, "+", attention.length - 5, " ", t('attention.andMore', lang)))) : null))) : null, subtab === 'owner' ? function () {
+    const log = audit || [];
+    const recent = window.KuBi.auditRecent(log, 12);
+    const people = window.KuBi.auditByPerson(log);
+    const stamp = function (at) {
+      return new Date(at).toLocaleTimeString('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    };
+    return /*#__PURE__*/React.createElement("div", {
+      className: "card audit-card"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "card-title"
+    }, t('audit.title', lang)), /*#__PURE__*/React.createElement("p", {
+      className: "module-sub"
+    }, t('audit.subtitle', lang)), log.length === 0 ? /*#__PURE__*/React.createElement("p", {
+      className: "module-sub"
+    }, t('audit.none', lang)) : /*#__PURE__*/React.createElement(React.Fragment, null, people.length ? /*#__PURE__*/React.createElement("div", {
+      className: "audit-people"
+    }, people.map(function (pp) {
+      return /*#__PURE__*/React.createElement("span", {
+        key: pp.by,
+        className: "audit-person"
+      }, pp.by, " ", /*#__PURE__*/React.createElement("b", null, pp.changes), " ", t(pp.changes === 1 ? 'audit.change' : 'audit.changes', lang));
+    })) : null, /*#__PURE__*/React.createElement("ul", {
+      className: "audit-list"
+    }, recent.map(function (e, i) {
+      return /*#__PURE__*/React.createElement("li", {
+        key: i,
+        className: "audit-row"
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "audit-when mono"
+      }, stamp(e.at)), /*#__PURE__*/React.createElement("span", {
+        className: "audit-what"
+      }, e.by ? /*#__PURE__*/React.createElement("b", null, e.by) : null, " ", t('audit.' + e.action, lang), function () {
+        const label = window.KuBi.auditSubjectLabel(e, {
+          lang: lang,
+          t: t,
+          appointments: appointments
+        });
+        return label ? /*#__PURE__*/React.createElement("span", {
+          className: "audit-subject"
+        }, " \u2014 ", label) : null;
+      }()));
+    })), log.length > recent.length ? /*#__PURE__*/React.createElement("p", {
+      className: "module-sub"
+    }, "+", log.length - recent.length, " ", t('audit.more', lang)) : null));
+  }() : null, subtab === 'mis' ? /*#__PURE__*/React.createElement(window.KuBi.MIS, {
     lang: lang,
     appointments: appointments,
     procedureState: procedureState,
@@ -43196,6 +43570,7 @@ function useClinicDay() {
   const [equipmentStatus, setEquipmentStatus] = React.useState(window.KuBi.EQUIPMENT_STATUS_SEED || {});
   const [repairs, setRepairs] = React.useState(window.KuBi.REPAIRS_SEED || []);
   const [labReceived, setLabReceived] = React.useState({});
+  const [audit, setAudit] = React.useState([]);
   const [sterPacks, setSterPacks] = React.useState(window.KuBi.STER_PACKS || []);
   const day = {
     clinicStatus: clinicStatus,
@@ -43220,6 +43595,8 @@ function useClinicDay() {
     setRepairs: setRepairs,
     labReceived: labReceived,
     setLabReceived: setLabReceived,
+    audit: audit,
+    setAudit: setAudit,
     sterPacks: sterPacks,
     setSterPacks: setSterPacks
   };
@@ -43311,7 +43688,9 @@ function Shell({
     labReceived,
     setLabReceived,
     sterPacks,
-    setSterPacks
+    setSterPacks,
+    audit,
+    setAudit
   } = day;
   const ActiveComponent = activeArea ? AREAS[activeArea].component() : null;
 
@@ -43332,6 +43711,21 @@ function Shell({
       repairs: repairs
     });
   }, [appointments, procedureState, closedCases, treatmentChecked, treatmentCheckedAfter, readinessChecked, equipmentStatus, sterPacks, clinicStatus, closingChecked, repairs, labReceived]);
+
+  // Every change the clinic makes passes through here on its way to
+  // state. Nobody is asked for anything: the actor is whoever is signed
+  // in and the time is now.
+  function note(area, action, subject, detail) {
+    setAudit(function (prev) {
+      return window.KuBi.auditAppend(prev, {
+        by: user.name,
+        area: area,
+        action: action,
+        subject: subject || null,
+        detail: detail || null
+      });
+    });
+  }
   function goTo(area, subtab, apptId, room) {
     // Every jump in the app goes through here — the NOW card, attention
     // items, chair tiles, journey links. Any of them can name an area this
@@ -43353,6 +43747,7 @@ function Shell({
       by: user.name,
       at: new Date()
     });
+    note('clinic', 'clinicOpened');
   }
   function closeClinic() {
     // The day's figures are final at close — capture them for MIS trends.
@@ -43376,8 +43771,10 @@ function Shell({
       at: new Date()
     });
     setClosingChecked({});
+    note('clinic', 'clinicClosed');
   }
   function toggleClosing(itemId) {
+    note('closure', closingChecked[itemId] ? 'closingUnchecked' : 'closingChecked', itemId);
     setClosingChecked(function (prev) {
       const next = Object.assign({}, prev);
       next[itemId] = !next[itemId];
@@ -43385,6 +43782,7 @@ function Shell({
     });
   }
   function toggleReadiness(key, byName) {
+    note('readiness', readinessChecked[key] ? 'readinessUnchecked' : 'readinessChecked', key);
     setReadinessChecked(function (prev) {
       const next = Object.assign({}, prev);
       if (next[key]) {
@@ -43399,6 +43797,7 @@ function Shell({
     });
   }
   function setApptStatus(id, status) {
+    note('patients', 'statusChanged', id, status);
     setAppointments(function (prev) {
       return prev.map(function (a) {
         return a.id === id ? Object.assign({}, a, {
@@ -43409,6 +43808,7 @@ function Shell({
     });
   }
   function startProcedure(apptId) {
+    note('treatment', 'procedureStarted', apptId);
     setProcedureState(function (prev) {
       const next = Object.assign({}, prev);
       next[apptId] = {
@@ -43421,6 +43821,7 @@ function Shell({
     setApptStatus(apptId, 'in_treatment');
   }
   function completeProcedure(apptId) {
+    note('treatment', 'procedureCompleted', apptId);
     setProcedureState(function (prev) {
       const next = Object.assign({}, prev);
       const cur = Object.assign({}, next[apptId] || {});
@@ -43430,6 +43831,7 @@ function Shell({
     });
   }
   function advancePack(packId) {
+    note('sterilization', 'packAdvanced', packId);
     setSterPacks(function (prev) {
       return prev.map(function (p) {
         if (p.id !== packId) return p;
@@ -43450,6 +43852,7 @@ function Shell({
   // the preparation visit is received before the fitting, which is a
   // different appointment entirely.
   function markLabReceived(labId) {
+    note('inventory', 'labReceived', labId);
     setLabReceived(function (prev) {
       const next = Object.assign({}, prev);
       next[labId] = true;
@@ -43457,6 +43860,7 @@ function Shell({
     });
   }
   function reportRepair(kind, place, what) {
+    note('exceptions', 'repairReported', place, what);
     setRepairs(function (prev) {
       return prev.concat([{
         id: 'R' + (prev.length + 1) + '-' + prev.length,
@@ -43471,6 +43875,7 @@ function Shell({
     });
   }
   function markRepairFixed(id) {
+    note('exceptions', 'repairFixed', id);
     setRepairs(function (prev) {
       return prev.map(function (r) {
         return r.id === id ? Object.assign({}, r, {
@@ -43480,19 +43885,25 @@ function Shell({
       });
     });
   }
-  function setEquipment(id, ok, note) {
+
+  // The parameter is called `reason` rather than `note`: the audit helper
+  // is also called note(), and shadowing it here would silently drop every
+  // equipment entry.
+  function setEquipment(id, ok, reason) {
     setEquipmentStatus(function (prev) {
       const next = Object.assign({}, prev);
       next[id] = {
         ok: ok,
-        note: note || '',
+        note: reason || '',
         at: new Date(),
         by: user.name
       };
       return next;
     });
+    note('equipment', ok ? 'equipmentWorking' : 'equipmentFault', id, reason || null);
   }
   function closeCase(apptId) {
+    note('closure', 'caseClosed', apptId);
     setClosedCases(function (prev) {
       const next = Object.assign({}, prev);
       next[apptId] = {
@@ -43504,6 +43915,7 @@ function Shell({
     setApptStatus(apptId, 'done');
   }
   function toggleTreatmentStep(apptId, stepIdx) {
+    note('treatment', 'beforeStepToggled', apptId, String(stepIdx));
     setTreatmentChecked(function (prev) {
       const next = Object.assign({}, prev);
       const apptState = Object.assign({}, next[apptId]);
@@ -43513,6 +43925,7 @@ function Shell({
     });
   }
   function toggleTreatmentStepAfter(apptId, stepIdx) {
+    note('treatment', 'afterStepToggled', apptId, String(stepIdx));
     setTreatmentCheckedAfter(function (prev) {
       const next = Object.assign({}, prev);
       const apptState = Object.assign({}, next[apptId]);
@@ -43616,6 +44029,7 @@ function Shell({
         sterPacks: sterPacks,
         closingChecked: closingChecked,
         repairs: repairs,
+        audit: audit,
         labReceived: labReceived,
         initialSubtab: navTarget.subtab,
         goTo: goTo

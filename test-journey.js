@@ -595,11 +595,17 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
     closedCases: {}, equipmentStatus: { autoclave: { ok: false, note: 'x', at: new Date() } },
     repairs: [{ id: 'R1', what: 'Tap', place: 'washroom', kind: 'plumbing', at: new Date(), done: false }],
     labReceived: { A7: true }, sterPacks: [],
+    audit: [{ at: new Date(), by: 'Priya Sharma', area: 'equipment',
+              action: 'equipmentFault', subject: 'chair_3', detail: 'Suction issue' }],
   };
 
   // A round trip through JSON is what the sheet actually stores.
   const wire = JSON.parse(JSON.stringify(K.snapshotDay(liveDay)));
   check('Every day field is carried', K.DAY_FIELDS.every(f => f in wire), K.DAY_FIELDS.length + ' fields');
+  check('The audit survives the round trip',
+        wire.audit.length === 1 && wire.audit[0].by === 'Priya Sharma' &&
+        !isNaN(new Date(wire.audit[0].at).getTime()),
+        'who and when both intact');
   check('Dates survive as usable dates',
         !isNaN(new Date(wire.clinicStatus.at).getTime()) &&
         Math.round((Date.now() - new Date(wire.appointments[0].statusAt).getTime()) / 60000) === 20,
@@ -1348,6 +1354,91 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   check('A lab blockage has one owner, not two',
         K.nextAction(chainCtx(CHAIN[4][1])).owner === (labExc ? labExc.raisedOwner : 'front_desk_receptionist'),
         'card: ' + K.nextAction(chainCtx(CHAIN[4][1])).owner + ', list: ' + (labExc ? labExc.raisedOwner : '-'));
+
+  // 43. AUDIT TRAIL — who changed what, and when.
+  //     The case timeline DERIVES today's entries from state, which is right
+  //     for a timeline. An audit cannot work that way: state remembers only
+  //     where things ended up. Equipment marked working, then faulty, then
+  //     working again leaves one value and no history.
+  let alog = [];
+  alog = K.auditAppend(alog, { by: 'Ramesh Yadav', area: 'clinic', action: 'clinicOpened' });
+  alog = K.auditAppend(alog, { by: 'Priya Sharma', area: 'equipment', action: 'equipmentFault',
+                               subject: 'chair_3', detail: 'Suction issue' });
+  alog = K.auditAppend(alog, { by: 'Priya Sharma', area: 'equipment', action: 'equipmentWorking',
+                               subject: 'chair_3' });
+
+  check('An audit entry records who, what and when',
+        alog.length === 3 && !!alog[0].by && !!alog[0].action && !!alog[0].at);
+  check('A change and its reversal are BOTH kept',
+        K.auditForSubject(alog, 'chair_3').length === 2,
+        'state would remember only the last');
+  check('It reads newest first', new Date(K.auditRecent(alog)[0].at).getTime() >=
+        new Date(K.auditRecent(alog)[2].at).getTime());
+  check('It can be asked about one area', K.auditForArea(alog, 'equipment').length === 2);
+  check('It can be asked who did what',
+        K.auditByPerson(alog)[0].by === 'Priya Sharma' && K.auditByPerson(alog)[0].changes === 2,
+        K.auditByPerson(alog).map(x => x.by + ' ' + x.changes).join(', '));
+
+  // Append-only: nothing edits or removes.
+  const lenBefore = alog.length;
+  const appended = K.auditAppend(alog, { by: 'X', area: 'clinic', action: 'clinicClosed' });
+  check('Appending never mutates what is already written',
+        alog.length === lenBefore && appended.length === lenBefore + 1);
+
+  // The ceiling, and the admission when it bites.
+  let auBig = [];
+  for (let auI = 0; auI < K.AUDIT_MAX + 25; auI++) {
+    auBig = K.auditAppend(auBig, { by: 'X', area: 'clinic', action: 'clinicOpened' });
+  }
+  check('A very long day is capped', auBig.length === K.AUDIT_MAX, auBig.length + ' entries');
+  check('...and says so rather than losing its start quietly',
+        auBig[0].action === 'auditTruncated' && Number(auBig[0].detail) > 0,
+        auBig[0].detail + ' dropped');
+
+  // Internals must not reach the screen — the id is stored, a name is shown.
+  const ctxLbl = { lang: 'en', t: K.t, appointments: K.APPOINTMENTS_TODAY };
+  check('An equipment id is shown as a place',
+        K.auditSubjectLabel({ subject: 'chair_3' }, ctxLbl) === 'Clinic 3',
+        K.auditSubjectLabel({ subject: 'chair_3' }, ctxLbl));
+  check('An appointment id is shown as a patient',
+        K.auditSubjectLabel({ subject: 'A1' }, ctxLbl) === 'Arjun Prasad');
+  const taskKey = K.allReadinessTasks()[0];
+  check('A readiness key is shown as the task',
+        !!K.auditSubjectLabel({ subject: taskKey }, ctxLbl) &&
+        !/-g\d+-t\d+/.test(K.auditSubjectLabel({ subject: taskKey }, ctxLbl)),
+        K.auditSubjectLabel({ subject: taskKey }, ctxLbl));
+  check('An unknown id shows nothing rather than a key',
+        K.auditSubjectLabel({ subject: 'zzz-not-a-thing' }, ctxLbl) === null);
+
+  // Every area the clinic asked to account for is covered.
+  ['treatment', 'closure', 'equipment', 'sterilization', 'inventory', 'exceptions']
+    .forEach(function (area) {
+      check('Audit covers ' + area, K.AUDIT_AREAS.indexOf(area) !== -1);
+    });
+
+  // A full audit must still fit in the day, or a busy clinic silently stops
+  // being saved — which is the exact failure an audit is meant to guard
+  // against. A cap of 400 produced a log larger than the whole budget.
+  let auFull = [];
+  for (let n = 0; n < K.AUDIT_MAX; n++) {
+    auFull = K.auditAppend(auFull, { by: 'Dr. Ananya Rao', area: 'treatment',
+                                     action: 'beforeStepToggled', subject: 'A1', detail: '3' });
+  }
+  const auWorstDay = {
+    clinicStatus: { open: true, by: 'Ramesh Yadav', at: new Date() },
+    readinessChecked: (function () { const m = {}; K.allReadinessTasks().forEach(k => m[k] = { by: 'Ramesh Yadav', at: new Date() }); return m; })(),
+    appointments: K.APPOINTMENTS_TODAY, treatmentChecked: {}, treatmentCheckedAfter: {},
+    closingChecked: {}, procedureState: {}, closedCases: {},
+    equipmentStatus: K.EQUIPMENT_STATUS_SEED, repairs: K.REPAIRS_SEED,
+    labReceived: {}, sterPacks: K.STER_PACKS || [], audit: auFull,
+  };
+  const auChars = JSON.stringify(K.snapshotDay(auWorstDay)).length;
+  check('A busy day with a full audit still fits in storage',
+        auChars < K.DAY_MAX_CHARS,
+        auChars + ' of ' + K.DAY_MAX_CHARS + ' chars');
+  check('...with headroom, not by a whisker',
+        auChars < K.DAY_MAX_CHARS * 0.9,
+        Math.round((1 - auChars / K.DAY_MAX_CHARS) * 100) + '% spare');
 
   // SUMMARY
   await step(() => {}, 150);

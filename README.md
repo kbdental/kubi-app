@@ -13,7 +13,7 @@ React is bundled in.
 ```bash
 npm install
 npm run build     # compiles src/ -> KuBi.html
-npm test          # builds, then runs 300 journey + 7 bundle + 20 Apps Script checks
+npm test          # builds, then runs 315 journey + 7 bundle + 20 Apps Script checks
 ```
 
 `KuBi.html` is generated. Edit `src/`, never the bundle.
@@ -30,6 +30,7 @@ src/
   clinicClosing.js     11-item closing gate (5 critical)
   patientCheckIn.js    Appointments, journey stages, follow-ups, lapsed
   cases.js             THE CASE — the thread joining all of the above
+  followUp.js          Due, called, booked, attended, closed
   treatmentChecklists.js  27 procedures, before/after, closure gate
   attention.js         What needs attention, with owner + reason
   equipment.js         Equipment status list
@@ -197,6 +198,32 @@ The attention list is sorted worst-first — how far a problem has escalated,
 then how long it has been open. Only five are shown, so what sits at the top
 is the whole question. Insertion order used to decide it, which put four
 room checklists raised a minute ago above a follow-up four days overdue.
+
+## The follow-up workflow
+
+    Due → Contact → Booked → Attended → Closed
+
+**Only one of those five is something anybody records.**
+
+| state | where it comes from |
+|---|---|
+| Due | the date — derived |
+| **Contact** | **the one entry: somebody rang. One tap.** |
+| Booked | the patient is in the diary — derived |
+| Attended | they turned up — derived |
+| Closed | attended, or somebody said it is finished |
+
+So a follow-up moves itself along as the clinic works, and the only thing
+recorded is the call that actually happened.
+
+**Being called buys a pause, not silence.** If the call led nowhere and no
+appointment was made, the follow-up comes back after
+`CONTACT_GRACE_DAYS` — "I rang and nobody answered" is not the same as done.
+Its age then runs from the CALL rather than the original date, because the
+clock restarts when somebody acts.
+
+**Attending outranks everything.** A patient in the chair is not somebody to
+ring, whatever the list said this morning.
 
 ## Exceptions and escalation
 

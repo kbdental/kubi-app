@@ -15,7 +15,7 @@ function pick(field, lang) {
   return field[lang] || field.en;
 }
 
-window.KuBi.Management = function Management({ lang, appointments, treatmentChecked, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, equipmentStatus, sterPacks, closingChecked, initialSubtab, repairs, labReceived, audit, goTo }) {
+window.KuBi.Management = function Management({ lang, appointments, treatmentChecked, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, equipmentStatus, sterPacks, closingChecked, initialSubtab, repairs, labReceived, audit, followUpProgress, goTo }) {
   const t = window.KuBi.t;
   const TABS = ['owner', 'mis', 'people'];
   const [subtab, setSubtab] = React.useState(initialSubtab || 'owner');
@@ -27,7 +27,7 @@ window.KuBi.Management = function Management({ lang, appointments, treatmentChec
   // ---- derived counts --------------------------------------------------
   const readiness = window.KuBi.readinessStats(checked);
   const attention = window.KuBi.computeAttentionItems(
-    appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived, equipmentStatus
+    appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived, equipmentStatus, followUpProgress
   );
 
   const scheduled = appointments.filter(function (a) { return a.status !== 'no_show'; }).length;

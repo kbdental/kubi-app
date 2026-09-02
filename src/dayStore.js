@@ -39,6 +39,8 @@ window.KuBi.DAY_FIELDS = [
   // Append-only, and part of the day so a handover or a refresh does not
   // lose who did what.
   'audit',
+  // The one thing a follow-up cannot derive: that somebody called.
+  'followUpProgress',
 ];
 
 // A Sheets cell holds 50,000 characters. A day should be nowhere near

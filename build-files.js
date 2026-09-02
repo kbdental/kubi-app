@@ -16,6 +16,7 @@ module.exports = [
   'src/sterilization.js',
   'src/inventory.js',
   'src/treatmentTemplates.js',
+  'src/followUp.js',
   'src/cases.js',
   'src/nextAction.js',
   'src/mis.js',

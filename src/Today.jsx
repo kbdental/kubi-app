@@ -21,12 +21,12 @@ function greetingKey(now) {
   return 'today.goodEvening';
 }
 
-window.KuBi.Today = function Today({ currentUser, lang, clinicStatus, appointments, checked, treatmentChecked, treatmentCheckedAfter, procedureState, closedCases, closingChecked, equipmentStatus, sterPacks, repairs, labReceived, goTo }) {
+window.KuBi.Today = function Today({ currentUser, lang, clinicStatus, appointments, checked, treatmentChecked, treatmentCheckedAfter, procedureState, closedCases, closingChecked, equipmentStatus, sterPacks, repairs, labReceived, followUpProgress, goTo }) {
   const t = window.KuBi.t;
   const [attentionOpen, setAttentionOpen] = React.useState(false);
 
   const readiness = window.KuBi.readinessStats(checked);
-  const attentionItems = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived, equipmentStatus);
+  const attentionItems = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived, equipmentStatus, followUpProgress);
   // Five, and never a sixth. Past that it stops being "what needs
   // attention" and becomes a to-do list, which staff stop reading. The
   // count above still reports the true total.

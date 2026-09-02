@@ -657,6 +657,17 @@
   .audit-subject { color: var(--ink-soft); }
   @media (max-width: 600px) { .audit-row { grid-template-columns: 1fr; gap: 2px; } }
 
+  .fu-state {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+    padding: 2px 9px; border-radius: 999px; white-space: nowrap;
+    border: 1px solid var(--line); color: var(--ink-soft);
+  }
+  .fu-state-due { color: var(--coral); border-color: var(--coral); }
+  .fu-state-contacted { color: var(--plum); border-color: var(--plum); }
+  .fu-state-booked { color: var(--teal); border-color: var(--teal); }
+  .fu-state-attended, .fu-state-closed { color: var(--green); border-color: var(--green); }
+  .fu-state-note { color: var(--ink-soft); font-size: 12px; }
+
   /* ---------- Case view ---------- */
   .case-view { padding: 20px; }
   .case-back { margin-bottom: 16px; }
@@ -839,7 +850,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 02 Sept 2026, 12:16 pm';
+  window.KuBi.BUILD_STAMP = 'Build: 02 Sept 2026, 03:11 pm';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -34238,6 +34249,50 @@ window.KuBi.STRINGS = {
     en: 'Overdue',
     hi: 'समय बीत गया'
   },
+  'fu.state.notYetDue': {
+    en: 'Not yet due',
+    hi: 'अभी समय नहीं हुआ'
+  },
+  'fu.state.due': {
+    en: 'Due',
+    hi: 'आज करना है'
+  },
+  'fu.state.contacted': {
+    en: 'Called',
+    hi: 'कॉल किया'
+  },
+  'fu.state.booked': {
+    en: 'Booked',
+    hi: 'अपॉइंटमेंट है'
+  },
+  'fu.state.attended': {
+    en: 'Attended',
+    hi: 'आ गए'
+  },
+  'fu.state.closed': {
+    en: 'Closed',
+    hi: 'बंद'
+  },
+  'fu.markCalled': {
+    en: 'Called',
+    hi: 'कॉल किया'
+  },
+  'fu.close': {
+    en: 'Close',
+    hi: 'बंद करें'
+  },
+  'fu.calledBy': {
+    en: 'called by',
+    hi: 'ने कॉल किया'
+  },
+  'fu.bookedFor': {
+    en: 'booked for',
+    hi: 'अपॉइंटमेंट'
+  },
+  'fu.needsChasing': {
+    en: 'still needs chasing',
+    hi: 'अभी भी पीछा करना है'
+  },
   'patients.tab.lab': {
     en: 'Lab',
     hi: 'लैब'
@@ -37722,7 +37777,7 @@ window.KuBi = window.KuBi || {};
 
 // Waiting longer than this is an exception, per the clinic's SOP.
 const WAIT_LIMIT_MIN = 15;
-window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfter, readinessChecked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived, equipmentStatus) {
+window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfter, readinessChecked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived, equipmentStatus, followUpProgress) {
   const items = [];
   const now = Date.now();
   const afterChecked = treatmentCheckedAfter || {};
@@ -37851,12 +37906,19 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
   // which is the follow-up being answered rather than ignored. Chasing
   // somebody who is sitting in the waiting room is how a list stops being
   // believed.
-  const bookedToday = {};
-  (appointments || []).forEach(function (a) {
-    bookedToday[a.patient] = true;
-  });
-  window.KuBi.followUpsDue().forEach(function (f) {
-    if (bookedToday[f.patient]) return;
+  // Only the ones nobody has done anything about. A follow-up that has been
+  // called, booked, or already attended is being handled — chasing it would
+  // teach staff that the list is noise.
+  //
+  // A call that led nowhere comes back after the grace period, because
+  // "I rang and they did not answer" is not the same as done.
+  const fuCtx = {
+    appointments: appointments || [],
+    followUpProgress: followUpProgress || {}
+  };
+  (window.KuBi.FOLLOW_UPS || []).forEach(function (f) {
+    if (!window.KuBi.followUpNeedsChasing(f, fuCtx)) return;
+    const thread = window.KuBi.followUpThread(f, fuCtx);
     items.push({
       id: 'followup-' + f.id,
       area: 'patients',
@@ -37866,8 +37928,11 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
       reason: f.reason,
       due: f.due,
       caseId: f.caseId || null,
+      followUpState: thread.state,
       owner: OWNER.followUpDue,
-      raisedAt: new Date(f.due + 'T09:00:00')
+      // A follow-up that was called and went quiet is aged from the CALL,
+      // not from the original date: the clock restarts when somebody acts.
+      raisedAt: thread.contactedAt || new Date(f.due + 'T09:00:00')
     });
   });
 
@@ -39029,6 +39094,133 @@ window.KuBi.templateGaps = function () {
   });
 };
 
+// ---- src/followUp.js ----
+// followUp.js — the loop from a closed case back to a patient in the chair.
+//
+//     Due → Contact → Booked → Attended → Closed
+//
+// WHAT STAFF ARE ASKED FOR, AND WHY IT IS ONLY ONE THING
+// The V2 principle is that KuBi should not ask for more information, it
+// should use what is already entered. Applied here:
+//
+//   Due       the date is already known — derived
+//   Contact   nothing in KuBi implies somebody picked up a phone. This is
+//             the ONE entry, and it is one tap.
+//   Booked    if the patient is in the diary, KuBi already knows — derived
+//   Attended  if they turned up, KuBi already knows — derived
+//   Closed    attended, or somebody said it is finished — derived
+//
+// So a follow-up moves itself along as the clinic works, and the only thing
+// anybody records is the call they actually made.
+
+window.KuBi = window.KuBi || {};
+window.KuBi.FOLLOWUP_STATES = ['notYetDue', 'due', 'contacted', 'booked', 'attended', 'closed'];
+
+// Having called somebody buys a pause, not silence. If the call led
+// nowhere and no appointment was made, the follow-up comes back.
+window.KuBi.CONTACT_GRACE_DAYS = 2;
+function _progress(ctx, id) {
+  return (ctx && ctx.followUpProgress || {})[id] || {};
+}
+function _daysSince(when) {
+  if (!when) return null;
+  const then = new Date(when).getTime();
+  return Math.floor((Date.now() - then) / 86400000);
+}
+
+/** Is this patient in the diary, on or after today? */
+window.KuBi.followUpBooking = function (f, ctx) {
+  const today = window.KuBi.operatingDate();
+  const c = ctx || {};
+
+  // Today's list first: a patient booked in today is booked.
+  const todayAppt = (c.appointments || []).find(function (a) {
+    return f.caseId && a.caseId === f.caseId || a.patient === f.patient;
+  });
+  if (todayAppt) return {
+    date: today,
+    appt: todayAppt
+  };
+  const ahead = (window.KuBi.UPCOMING || []).filter(function (u) {
+    if (u.date < today) return false;
+    return f.caseId && u.caseId === f.caseId || u.patient === f.patient;
+  }).sort(function (a, b) {
+    return a.date.localeCompare(b.date);
+  });
+  return ahead.length ? {
+    date: ahead[0].date,
+    appt: null
+  } : null;
+};
+
+/** Did they actually come? */
+window.KuBi.followUpAttended = function (f, ctx) {
+  const attendedStates = ['arrived', 'waiting', 'in_chair', 'in_treatment', 'done'];
+  return (ctx && ctx.appointments || []).some(function (a) {
+    const mine = f.caseId && a.caseId === f.caseId || a.patient === f.patient;
+    return mine && attendedStates.indexOf(a.status) !== -1;
+  });
+};
+
+/**
+ * Where this follow-up has got to. Derived from the diary and the day,
+ * except for the one recorded fact: that somebody called.
+ */
+window.KuBi.followUpState = function (f, ctx) {
+  if (!f) return null;
+  const p = _progress(ctx, f.id);
+  if (p.dismissedAt) return 'closed';
+  if (window.KuBi.followUpAttended(f, ctx)) return 'attended';
+  if (window.KuBi.followUpBooking(f, ctx)) return 'booked';
+  if (p.contactedAt) return 'contacted';
+  return window.KuBi.followUpIsDue(f) ? 'due' : 'notYetDue';
+};
+
+/**
+ * Does this still need chasing? Only when nobody has done anything about
+ * it — or when a call led nowhere and the grace has run out.
+ *
+ * A patient who is booked, or who has turned up, is not chased. Chasing
+ * somebody who is sitting in the waiting room is how a list stops being
+ * believed.
+ */
+window.KuBi.followUpNeedsChasing = function (f, ctx) {
+  const state = window.KuBi.followUpState(f, ctx);
+  if (state === 'due') return true;
+  if (state !== 'contacted') return false;
+  const since = _daysSince(_progress(ctx, f.id).contactedAt);
+  return since !== null && since >= window.KuBi.CONTACT_GRACE_DAYS;
+};
+
+/** Everything about one follow-up, assembled for a screen. */
+window.KuBi.followUpThread = function (f, ctx) {
+  const p = _progress(ctx, f.id);
+  const booking = window.KuBi.followUpBooking(f, ctx);
+  return {
+    id: f.id,
+    patient: f.patient,
+    reason: f.reason,
+    due: f.due,
+    caseId: f.caseId || null,
+    state: window.KuBi.followUpState(f, ctx),
+    contactedAt: p.contactedAt || null,
+    contactedBy: p.contactedBy || null,
+    outcome: p.outcome || null,
+    bookedFor: booking ? booking.date : null,
+    needsChasing: window.KuBi.followUpNeedsChasing(f, ctx),
+    overdue: window.KuBi.isOverdue(f)
+  };
+};
+
+/** Every follow-up, soonest due first, with where each has got to. */
+window.KuBi.followUpThreads = function (ctx) {
+  return (window.KuBi.FOLLOW_UPS || []).map(function (f) {
+    return window.KuBi.followUpThread(f, ctx);
+  }).sort(function (a, b) {
+    return String(a.due).localeCompare(String(b.due));
+  });
+};
+
 // ---- src/cases.js ----
 // cases.js — the Case: the thread that connects everything KuBi knows
 // about one course of treatment.
@@ -40152,7 +40344,9 @@ window.KuBi = window.KuBi || {};
 window.KuBi.DAY_FIELDS = ['clinicStatus', 'readinessChecked', 'appointments', 'treatmentChecked', 'treatmentCheckedAfter', 'closingChecked', 'procedureState', 'closedCases', 'equipmentStatus', 'repairs', 'labReceived', 'sterPacks',
 // Append-only, and part of the day so a handover or a refresh does not
 // lose who did what.
-'audit'];
+'audit',
+// The one thing a follow-up cannot derive: that somebody called.
+'followUpProgress'];
 
 // A Sheets cell holds 50,000 characters. A day should be nowhere near
 // that, but a runaway would fail the write silently, so it is checked.
@@ -40704,7 +40898,7 @@ window.KuBi.buildSnapshot = function (ctx, closedProperly) {
   const d = window.KuBi.misToday(ctx);
   const readiness = window.KuBi.readinessStats(ctx.readinessChecked || {});
   const counts = window.KuBi.attendanceCounts();
-  const attention = window.KuBi.computeAttentionItems(ctx.appointments, ctx.treatmentCheckedAfter, ctx.readinessChecked, ctx.clinicStatus, ctx.procedureState, ctx.closedCases, ctx.treatmentChecked, ctx.repairs, ctx.labReceived, ctx.equipmentStatus);
+  const attention = window.KuBi.computeAttentionItems(ctx.appointments, ctx.treatmentCheckedAfter, ctx.readinessChecked, ctx.clinicStatus, ctx.procedureState, ctx.closedCases, ctx.treatmentChecked, ctx.repairs, ctx.labReceived, ctx.equipmentStatus, ctx.followUpProgress);
   return {
     date: window.KuBi.operatingDate(),
     closedProperly: !!closedProperly,
@@ -41058,12 +41252,13 @@ window.KuBi.Today = function Today({
   sterPacks,
   repairs,
   labReceived,
+  followUpProgress,
   goTo
 }) {
   const t = window.KuBi.t;
   const [attentionOpen, setAttentionOpen] = React.useState(false);
   const readiness = window.KuBi.readinessStats(checked);
-  const attentionItems = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived, equipmentStatus);
+  const attentionItems = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived, equipmentStatus, followUpProgress);
   // Five, and never a sixth. Past that it stops being "what needs
   // attention" and becomes a to-do list, which staff stop reading. The
   // count above still reports the true total.
@@ -42055,7 +42250,10 @@ window.KuBi.Patients = function Patients({
   treatmentChecked,
   treatmentCheckedAfter,
   procedureState,
-  closedCases
+  closedCases,
+  followUpProgress,
+  onFollowUpContact,
+  onFollowUpClose
 }) {
   const t = window.KuBi.t;
   const RoleBadge = window.KuBi.RoleBadge;
@@ -42363,15 +42561,17 @@ window.KuBi.Patients = function Patients({
     className: "module-sub"
   }, t('followup.subtitle', lang)), /*#__PURE__*/React.createElement("ul", {
     className: "fu-list"
-  }, (window.KuBi.FOLLOW_UPS || []).slice().sort(function (a, b) {
-    return a.due.localeCompare(b.due);
+  }, window.KuBi.followUpThreads({
+    appointments: appointments,
+    followUpProgress: followUpProgress
   }).map(function (f) {
+    const dot = f.state === 'attended' || f.state === 'closed' ? '🟢' : f.state === 'booked' ? '🔵' : f.needsChasing ? '🔴' : '🟡';
     return /*#__PURE__*/React.createElement("li", {
       key: f.id,
-      className: 'fu-row' + (window.KuBi.isOverdue(f) ? ' fu-overdue' : '')
+      className: 'fu-row' + (f.needsChasing ? ' fu-overdue' : '')
     }, /*#__PURE__*/React.createElement("span", {
       className: "fu-dot"
-    }, window.KuBi.isOverdue(f) ? '🔴' : '🟢'), f.caseId && window.KuBi.caseById(f.caseId) ? /*#__PURE__*/React.createElement("button", {
+    }, dot), f.caseId && window.KuBi.caseById(f.caseId) ? /*#__PURE__*/React.createElement("button", {
       className: "link-btn fu-patient case-link",
       onClick: function () {
         setOpenCaseId(f.caseId);
@@ -42380,11 +42580,23 @@ window.KuBi.Patients = function Patients({
       className: "fu-patient"
     }, f.patient), /*#__PURE__*/React.createElement("span", {
       className: "fu-reason"
-    }, f.reason), /*#__PURE__*/React.createElement("span", {
+    }, f.reason, /*#__PURE__*/React.createElement("span", {
+      className: "fu-state-note"
+    }, f.state === 'contacted' && f.contactedBy ? ' · ' + t('fu.calledBy', lang) + ' ' + f.contactedBy : null, f.state === 'booked' && f.bookedFor ? ' · ' + t('fu.bookedFor', lang) + ' ' + f.bookedFor : null, f.needsChasing && f.state === 'contacted' ? ' · ' + t('fu.needsChasing', lang) : null)), /*#__PURE__*/React.createElement("span", {
+      className: 'fu-state fu-state-' + f.state
+    }, t('fu.state.' + f.state, lang)), /*#__PURE__*/React.createElement("span", {
       className: "fu-due"
-    }, window.KuBi.isOverdue(f) ? t('followup.overdue', lang) + ' · ' : '', f.due), f.phone ? /*#__PURE__*/React.createElement("span", {
-      className: "fu-called"
-    }, t('followup.contacted', lang)) : null);
+    }, f.overdue ? t('followup.overdue', lang) + ' · ' : '', f.due), f.state === 'due' || f.needsChasing ? /*#__PURE__*/React.createElement("button", {
+      className: "rowbtn",
+      onClick: function () {
+        onFollowUpContact(f.id);
+      }
+    }, t('fu.markCalled', lang)) : null, f.state !== 'closed' && f.state !== 'attended' ? /*#__PURE__*/React.createElement("button", {
+      className: "rowbtn",
+      onClick: function () {
+        onFollowUpClose(f.id);
+      }
+    }, t('fu.close', lang)) : null);
   }))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     className: "card"
   }, /*#__PURE__*/React.createElement("div", {
@@ -43350,6 +43562,7 @@ window.KuBi.Management = function Management({
   repairs,
   labReceived,
   audit,
+  followUpProgress,
   goTo
 }) {
   const t = window.KuBi.t;
@@ -43361,7 +43574,7 @@ window.KuBi.Management = function Management({
 
   // ---- derived counts --------------------------------------------------
   const readiness = window.KuBi.readinessStats(checked);
-  const attention = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived, equipmentStatus);
+  const attention = window.KuBi.computeAttentionItems(appointments, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived, equipmentStatus, followUpProgress);
   const scheduled = appointments.filter(function (a) {
     return a.status !== 'no_show';
   }).length;
@@ -43762,6 +43975,7 @@ function useClinicDay() {
   const [repairs, setRepairs] = React.useState(window.KuBi.REPAIRS_SEED || []);
   const [labReceived, setLabReceived] = React.useState({});
   const [audit, setAudit] = React.useState([]);
+  const [followUpProgress, setFollowUpProgress] = React.useState({});
   const [sterPacks, setSterPacks] = React.useState(window.KuBi.STER_PACKS || []);
   const day = {
     clinicStatus: clinicStatus,
@@ -43788,6 +44002,8 @@ function useClinicDay() {
     setLabReceived: setLabReceived,
     audit: audit,
     setAudit: setAudit,
+    followUpProgress: followUpProgress,
+    setFollowUpProgress: setFollowUpProgress,
     sterPacks: sterPacks,
     setSterPacks: setSterPacks
   };
@@ -43949,7 +44165,9 @@ function Shell({
     sterPacks,
     setSterPacks,
     audit,
-    setAudit
+    setAudit,
+    followUpProgress,
+    setFollowUpProgress
   } = day;
   const ActiveComponent = activeArea ? AREAS[activeArea].component() : null;
 
@@ -44110,6 +44328,33 @@ function Shell({
   // Keyed by the lab item, not by the visit that sent it — a crown sent at
   // the preparation visit is received before the fitting, which is a
   // different appointment entirely.
+  // The only thing a follow-up asks anybody to enter: that a call was
+  // made. Booked and attended are read from the diary, so nobody has to
+  // tell KuBi twice.
+  function recordFollowUpContact(id, outcome) {
+    note('patients', 'followUpContacted', id, outcome || null);
+    setFollowUpProgress(function (prev) {
+      const next = Object.assign({}, prev);
+      next[id] = Object.assign({}, next[id], {
+        contactedAt: new Date(),
+        contactedBy: user.name,
+        outcome: outcome || null
+      });
+      return next;
+    });
+  }
+  function dismissFollowUp(id, why) {
+    note('patients', 'followUpClosed', id, why || null);
+    setFollowUpProgress(function (prev) {
+      const next = Object.assign({}, prev);
+      next[id] = Object.assign({}, next[id], {
+        dismissedAt: new Date(),
+        dismissedBy: user.name,
+        outcome: why || null
+      });
+      return next;
+    });
+  }
   function markLabReceived(labId) {
     note('inventory', 'labReceived', labId);
     setLabReceived(function (prev) {
@@ -44213,6 +44458,7 @@ function Shell({
         sterPacks: sterPacks,
         repairs: repairs,
         labReceived: labReceived,
+        followUpProgress: followUpProgress,
         goTo: goTo
       });
     }
@@ -44235,6 +44481,7 @@ function Shell({
         onAdvancePack: advancePack,
         repairs: repairs,
         labReceived: labReceived,
+        followUpProgress: followUpProgress,
         onReportRepair: reportRepair,
         onRepairFixed: markRepairFixed,
         appointments: appointments
@@ -44251,6 +44498,9 @@ function Shell({
         initialSubtab: navTarget.subtab,
         labReceived: labReceived,
         onLabReceived: markLabReceived,
+        followUpProgress: followUpProgress,
+        onFollowUpContact: recordFollowUpContact,
+        onFollowUpClose: dismissFollowUp,
         treatmentChecked: treatmentChecked,
         treatmentCheckedAfter: treatmentCheckedAfter,
         procedureState: procedureState,

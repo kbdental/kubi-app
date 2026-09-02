@@ -11,7 +11,8 @@ function pick(field, lang) {
 }
 
 window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setStatus, goTo, initialApptId, initialSubtab, labReceived, onLabReceived,
-                                        treatmentChecked, treatmentCheckedAfter, procedureState, closedCases }) {
+                                        treatmentChecked, treatmentCheckedAfter, procedureState, closedCases,
+                                        followUpProgress, onFollowUpContact, onFollowUpClose }) {
   const t = window.KuBi.t;
   const RoleBadge = window.KuBi.RoleBadge;
   const readiness = window.KuBi.PRE_ARRIVAL_READINESS;
@@ -335,17 +336,46 @@ window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setS
           <div className="card-title">{t('followup.title', lang)}</div>
           <p className="module-sub">{t('followup.subtitle', lang)}</p>
           <ul className="fu-list">
-            {(window.KuBi.FOLLOW_UPS || []).slice().sort(function (a, b) { return a.due.localeCompare(b.due); }).map(function (f) {
+            {/* Due → Called → Booked → Attended → Closed. Only "called" is
+                recorded by anybody: booked and attended are read from the
+                diary, so nobody tells KuBi something it can already see. */}
+            {window.KuBi.followUpThreads({ appointments: appointments, followUpProgress: followUpProgress }).map(function (f) {
+              const dot = f.state === 'attended' || f.state === 'closed' ? '🟢'
+                        : f.state === 'booked' ? '🔵'
+                        : f.needsChasing ? '🔴' : '🟡';
               return (
-                <li key={f.id} className={'fu-row' + (window.KuBi.isOverdue(f) ? ' fu-overdue' : '')}>
-                  <span className="fu-dot">{window.KuBi.isOverdue(f) ? '🔴' : '🟢'}</span>
+                <li key={f.id} className={'fu-row' + (f.needsChasing ? ' fu-overdue' : '')}>
+                  <span className="fu-dot">{dot}</span>
                   {f.caseId && window.KuBi.caseById(f.caseId) ? (
                     <button className="link-btn fu-patient case-link"
                             onClick={function () { setOpenCaseId(f.caseId); }}>{f.patient}</button>
                   ) : <span className="fu-patient">{f.patient}</span>}
-                  <span className="fu-reason">{f.reason}</span>
-                  <span className="fu-due">{window.KuBi.isOverdue(f) ? t('followup.overdue', lang) + ' · ' : ''}{f.due}</span>
-                  {f.phone ? <span className="fu-called">{t('followup.contacted', lang)}</span> : null}
+                  <span className="fu-reason">
+                    {f.reason}
+                    <span className="fu-state-note">
+                      {f.state === 'contacted' && f.contactedBy
+                        ? ' · ' + t('fu.calledBy', lang) + ' ' + f.contactedBy
+                        : null}
+                      {f.state === 'booked' && f.bookedFor
+                        ? ' · ' + t('fu.bookedFor', lang) + ' ' + f.bookedFor
+                        : null}
+                      {f.needsChasing && f.state === 'contacted'
+                        ? ' · ' + t('fu.needsChasing', lang)
+                        : null}
+                    </span>
+                  </span>
+                  <span className={'fu-state fu-state-' + f.state}>{t('fu.state.' + f.state, lang)}</span>
+                  <span className="fu-due">{f.overdue ? t('followup.overdue', lang) + ' · ' : ''}{f.due}</span>
+                  {f.state === 'due' || f.needsChasing ? (
+                    <button className="rowbtn" onClick={function () { onFollowUpContact(f.id); }}>
+                      {t('fu.markCalled', lang)}
+                    </button>
+                  ) : null}
+                  {f.state !== 'closed' && f.state !== 'attended' ? (
+                    <button className="rowbtn" onClick={function () { onFollowUpClose(f.id); }}>
+                      {t('fu.close', lang)}
+                    </button>
+                  ) : null}
                 </li>
               );
             })}

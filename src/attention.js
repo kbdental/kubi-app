@@ -11,7 +11,7 @@ window.KuBi = window.KuBi || {};
 // Waiting longer than this is an exception, per the clinic's SOP.
 const WAIT_LIMIT_MIN = 15;
 
-window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfter, readinessChecked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived, equipmentStatus) {
+window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfter, readinessChecked, clinicStatus, procedureState, closedCases, treatmentChecked, repairs, labReceived, equipmentStatus, followUpProgress) {
   const items = [];
   const now = Date.now();
   const afterChecked = treatmentCheckedAfter || {};
@@ -101,16 +101,24 @@ window.KuBi.computeAttentionItems = function (appointments, treatmentCheckedAfte
   // which is the follow-up being answered rather than ignored. Chasing
   // somebody who is sitting in the waiting room is how a list stops being
   // believed.
-  const bookedToday = {};
-  (appointments || []).forEach(function (a) { bookedToday[a.patient] = true; });
-  window.KuBi.followUpsDue().forEach(function (f) {
-    if (bookedToday[f.patient]) return;
+  // Only the ones nobody has done anything about. A follow-up that has been
+  // called, booked, or already attended is being handled — chasing it would
+  // teach staff that the list is noise.
+  //
+  // A call that led nowhere comes back after the grace period, because
+  // "I rang and they did not answer" is not the same as done.
+  const fuCtx = { appointments: appointments || [], followUpProgress: followUpProgress || {} };
+  (window.KuBi.FOLLOW_UPS || []).forEach(function (f) {
+    if (!window.KuBi.followUpNeedsChasing(f, fuCtx)) return;
+    const thread = window.KuBi.followUpThread(f, fuCtx);
     items.push({
       id: 'followup-' + f.id, area: 'patients', subtab: 'followup',
       kind: 'followUpDue', patient: f.patient, reason: f.reason, due: f.due,
-      caseId: f.caseId || null,
+      caseId: f.caseId || null, followUpState: thread.state,
       owner: OWNER.followUpDue,
-      raisedAt: new Date(f.due + 'T09:00:00'),
+      // A follow-up that was called and went quiet is aged from the CALL,
+      // not from the original date: the clock restarts when somebody acts.
+      raisedAt: thread.contactedAt || new Date(f.due + 'T09:00:00'),
     });
   });
 

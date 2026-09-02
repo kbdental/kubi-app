@@ -145,7 +145,7 @@ window.KuBi.buildSnapshot = function (ctx, closedProperly) {
   const counts = window.KuBi.attendanceCounts();
   const attention = window.KuBi.computeAttentionItems(
     ctx.appointments, ctx.treatmentCheckedAfter, ctx.readinessChecked,
-    ctx.clinicStatus, ctx.procedureState, ctx.closedCases, ctx.treatmentChecked, ctx.repairs, ctx.labReceived, ctx.equipmentStatus
+    ctx.clinicStatus, ctx.procedureState, ctx.closedCases, ctx.treatmentChecked, ctx.repairs, ctx.labReceived, ctx.equipmentStatus, ctx.followUpProgress
   );
 
   return {

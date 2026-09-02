@@ -657,6 +657,17 @@
   .audit-subject { color: var(--ink-soft); }
   @media (max-width: 600px) { .audit-row { grid-template-columns: 1fr; gap: 2px; } }
 
+  .fu-state {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+    padding: 2px 9px; border-radius: 999px; white-space: nowrap;
+    border: 1px solid var(--line); color: var(--ink-soft);
+  }
+  .fu-state-due { color: var(--coral); border-color: var(--coral); }
+  .fu-state-contacted { color: var(--plum); border-color: var(--plum); }
+  .fu-state-booked { color: var(--teal); border-color: var(--teal); }
+  .fu-state-attended, .fu-state-closed { color: var(--green); border-color: var(--green); }
+  .fu-state-note { color: var(--ink-soft); font-size: 12px; }
+
   /* ---------- Case view ---------- */
   .case-view { padding: 20px; }
   .case-back { margin-bottom: 16px; }

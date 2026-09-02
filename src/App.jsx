@@ -103,6 +103,7 @@ function useClinicDay() {
   const [repairs, setRepairs] = React.useState(window.KuBi.REPAIRS_SEED || []);
   const [labReceived, setLabReceived] = React.useState({});
   const [audit, setAudit] = React.useState([]);
+  const [followUpProgress, setFollowUpProgress] = React.useState({});
   const [sterPacks, setSterPacks] = React.useState(window.KuBi.STER_PACKS || []);
 
   const day = {
@@ -118,6 +119,7 @@ function useClinicDay() {
     repairs: repairs, setRepairs: setRepairs,
     labReceived: labReceived, setLabReceived: setLabReceived,
     audit: audit, setAudit: setAudit,
+    followUpProgress: followUpProgress, setFollowUpProgress: setFollowUpProgress,
     sterPacks: sterPacks, setSterPacks: setSterPacks,
   };
 
@@ -245,6 +247,7 @@ function Shell({ user, onLogout, lang, setLang, day }) {
     equipmentStatus, setEquipmentStatus, repairs, setRepairs,
     labReceived, setLabReceived, sterPacks, setSterPacks,
     audit, setAudit,
+    followUpProgress, setFollowUpProgress,
   } = day;
 
   const ActiveComponent = activeArea ? AREAS[activeArea].component() : null;
@@ -378,6 +381,31 @@ function Shell({ user, onLogout, lang, setLang, day }) {
   // Keyed by the lab item, not by the visit that sent it — a crown sent at
   // the preparation visit is received before the fitting, which is a
   // different appointment entirely.
+  // The only thing a follow-up asks anybody to enter: that a call was
+  // made. Booked and attended are read from the diary, so nobody has to
+  // tell KuBi twice.
+  function recordFollowUpContact(id, outcome) {
+    note('patients', 'followUpContacted', id, outcome || null);
+    setFollowUpProgress(function (prev) {
+      const next = Object.assign({}, prev);
+      next[id] = Object.assign({}, next[id], {
+        contactedAt: new Date(), contactedBy: user.name, outcome: outcome || null,
+      });
+      return next;
+    });
+  }
+
+  function dismissFollowUp(id, why) {
+    note('patients', 'followUpClosed', id, why || null);
+    setFollowUpProgress(function (prev) {
+      const next = Object.assign({}, prev);
+      next[id] = Object.assign({}, next[id], {
+        dismissedAt: new Date(), dismissedBy: user.name, outcome: why || null,
+      });
+      return next;
+    });
+  }
+
   function markLabReceived(labId) {
     note('inventory', 'labReceived', labId);
     setLabReceived(function (prev) {
@@ -468,6 +496,7 @@ function Shell({ user, onLogout, lang, setLang, day }) {
           sterPacks={sterPacks}
           repairs={repairs}
           labReceived={labReceived}
+          followUpProgress={followUpProgress}
           goTo={goTo}
         />
       );
@@ -492,6 +521,7 @@ function Shell({ user, onLogout, lang, setLang, day }) {
           onAdvancePack={advancePack}
           repairs={repairs}
           labReceived={labReceived}
+          followUpProgress={followUpProgress}
           onReportRepair={reportRepair}
           onRepairFixed={markRepairFixed}
           appointments={appointments}
@@ -510,6 +540,9 @@ function Shell({ user, onLogout, lang, setLang, day }) {
           initialSubtab={navTarget.subtab}
           labReceived={labReceived}
           onLabReceived={markLabReceived}
+          followUpProgress={followUpProgress}
+          onFollowUpContact={recordFollowUpContact}
+          onFollowUpClose={dismissFollowUp}
           treatmentChecked={treatmentChecked}
           treatmentCheckedAfter={treatmentCheckedAfter}
           procedureState={procedureState}

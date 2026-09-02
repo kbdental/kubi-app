@@ -597,6 +597,7 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
     labReceived: { A7: true }, sterPacks: [],
     audit: [{ at: new Date(), by: 'Priya Sharma', area: 'equipment',
               action: 'equipmentFault', subject: 'chair_3', detail: 'Suction issue' }],
+    followUpProgress: { F1: { contactedAt: new Date(), contactedBy: 'Nisha Verma' } },
   };
 
   // A round trip through JSON is what the sheet actually stores.
@@ -1029,8 +1030,12 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   check('It is owned, and escalates like anything else',
         raised.every(i => !!i.owner && !!i.escalation),
         raised.map(i => i.patient + ': ' + i.owner).join(', '));
-  check('A follow-up four days late has escalated',
-        raised.some(i => i.escalation.escalated === true));
+  // Vikram is four days overdue AND booked in three days' time, so he is
+  // deliberately NOT chased any more — being booked is the follow-up being
+  // answered. That is the whole point of the workflow.
+  check('Somebody already booked is not chased',
+        !raised.some(i => i.patient === 'Vikram Shah'),
+        'he is in the diary, so the list leaves him alone');
 
   // The loop closing: the patient came back, so stop chasing them.
   const backToday = [{ id: 'B1', patient: raised[0].patient, chair: 1, status: 'arrived',
@@ -1541,6 +1546,91 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
         K.mergeDay(mgBigA, mgBigB).audit.length + ' entries');
   check('...and keeps the most recent, not the oldest',
         K.mergeDay(mgBigA, mgBigB).audit.slice(-1)[0].at >= K.mergeDay(mgBigA, mgBigB).audit[0].at);
+
+  // 45. THE FOLLOW-UP WORKFLOW — due, called, booked, attended, closed.
+  //     Of the five, only "called" is something a person records. Booked and
+  //     attended are read from the diary KuBi already has, which is the V2
+  //     principle applied: do not ask for what is already known.
+  const fwDue = { id: 'FW1', patient: 'Sanjay Bhatt', reason: 'Suture removal',
+                  due: K.operatingDate(), caseId: null };
+  const fwLater = { id: 'FW2', patient: 'Nobody Booked', reason: 'Review',
+                    due: K.operatingDate(new Date(Date.now() + 5 * 86400000)), caseId: null };
+  const fwCtx = over => Object.assign({ appointments: [], followUpProgress: {} }, over || {});
+
+  check('A follow-up whose date has not come is not due',
+        K.followUpState(fwLater, fwCtx()) === 'notYetDue');
+  check('A follow-up whose date has arrived is due',
+        K.followUpState(fwDue, fwCtx()) === 'due');
+
+  // ONE entry: somebody called.
+  const called = fwCtx({ followUpProgress: { FW1: { contactedAt: new Date(), contactedBy: 'Nisha Verma' } } });
+  check('Recording a call moves it on', K.followUpState(fwDue, called) === 'contacted');
+  check('...and stops it being chased straight away',
+        K.followUpNeedsChasing(fwDue, called) === false);
+
+  // A call that led nowhere comes back.
+  const staleCall = fwCtx({ followUpProgress: { FW1: {
+    contactedAt: new Date(Date.now() - (K.CONTACT_GRACE_DAYS + 1) * 86400000),
+    contactedBy: 'Nisha Verma' } } });
+  check('A call that led nowhere comes back after the grace period',
+        K.followUpNeedsChasing(fwDue, staleCall) === true,
+        'rang and nothing happened is not the same as done');
+
+  // BOOKED is derived — nobody records it.
+  const bookedFu = { id: 'FW3', patient: 'Vikram Shah', reason: 'Crown fitting',
+                     due: K.operatingDate(new Date(Date.now() - 4 * 86400000)),
+                     caseId: 'VS0221-CROWN_SINGLE-01' };
+  check('Being in the diary IS being booked, with nothing recorded',
+        K.followUpState(bookedFu, fwCtx()) === 'booked',
+        'read from UPCOMING, not entered');
+  check('A booked patient is not chased, however overdue the date',
+        K.followUpNeedsChasing(bookedFu, fwCtx()) === false);
+  check('It says when they are booked for',
+        !!K.followUpThread(bookedFu, fwCtx()).bookedFor,
+        K.followUpThread(bookedFu, fwCtx()).bookedFor);
+
+  // ATTENDED is derived too.
+  const camePast = fwCtx({ appointments: [
+    { id: 'FZ', patient: 'Sanjay Bhatt', chair: 1, status: 'in_chair',
+      procedureType: 'Consultation', time: '09:00' }] });
+  check('Turning up IS attending, with nothing recorded',
+        K.followUpState(fwDue, camePast) === 'attended');
+  check('Somebody who came is not chased',
+        K.followUpNeedsChasing(fwDue, camePast) === false);
+
+  // CLOSED, when somebody says it is finished.
+  const shut = fwCtx({ followUpProgress: { FW1: { dismissedAt: new Date(), dismissedBy: 'Nisha Verma' } } });
+  check('A follow-up can be closed outright', K.followUpState(fwDue, shut) === 'closed');
+  check('A closed follow-up is never chased again',
+        K.followUpNeedsChasing(fwDue, shut) === false);
+
+  // Attending beats everything: a patient in the chair is not "due a call".
+  const bothCalledAndCame = fwCtx({
+    followUpProgress: { FW1: { contactedAt: new Date() } },
+    appointments: [{ id: 'FZ', patient: 'Sanjay Bhatt', chair: 1, status: 'done',
+                     procedureType: 'Consultation', time: '09:00' }],
+  });
+  check('Attending outranks having been called',
+        K.followUpState(fwDue, bothCalledAndCame) === 'attended');
+
+  // The attention list follows the same rule.
+  const fwOpen = { open: true, by: 'X', at: new Date() };
+  const chasedNow = fups => K.computeAttentionItems([], {}, {}, fwOpen, {}, {}, {}, [], {}, {}, fups)
+                             .filter(i => i.kind === 'followUpDue');
+  const beforeCall = chasedNow({});
+  const afterCall = chasedNow(
+    beforeCall.length
+      ? (function () { const m = {}; m[beforeCall[0].id.replace('followup-', '')] = { contactedAt: new Date(), contactedBy: 'X' }; return m; })()
+      : {});
+  check('Calling somebody takes them off the attention list',
+        afterCall.length === Math.max(0, beforeCall.length - 1),
+        beforeCall.length + ' -> ' + afterCall.length);
+
+  // Every state has wording, in both languages.
+  check('Every follow-up state has words for it',
+        K.FOLLOWUP_STATES.every(st => K.t('fu.state.' + st, 'en') !== 'fu.state.' + st &&
+                                      K.t('fu.state.' + st, 'hi') !== 'fu.state.' + st),
+        K.FOLLOWUP_STATES.join(', '));
 
   // SUMMARY
   await step(() => {}, 150);

@@ -262,6 +262,19 @@ every time KuBi learns to notice something new.
 then the extra fields are simply dropped, which is safe but means the days
 filed in between carry no kinds.
 
+A redeploy alone was once not enough: the tabs were given headers only when
+they were *created*, so a sheet made by an older version kept its shorter
+header row, and new columns landed under blank headers — read back under
+empty names and lost. `ensureHeaders_()` now extends an existing header row,
+and leaves it alone if somebody has renamed or reordered a column by hand.
+
+`ping` reports `SCRIPT_VERSION` and the header count, so **"is the new
+version actually live?"** is answerable without writing anything:
+
+```bash
+curl "<your /exec URL>?action=ping"
+```
+
 ## Inventory intelligence
 
     Today / tomorrow / minimum / reorder

@@ -26,6 +26,11 @@
  */
 
 var TOKEN = 'kb-b5mdu6-vpa25g-fkxfcf';   // must match SHEETS_CONFIG.token in KuBi
+
+// Bumped whenever this file changes in a way a deployment must pick up.
+// `ping` reports it, so "is the new version actually live" is answerable
+// without writing anything to the sheet.
+var SCRIPT_VERSION = 2;
 var SHEET_NAME = 'KuBi History';   // one row per finished day
 var DAY_SHEET_NAME = 'KuBi Day';   // the day in progress, so a refresh loses nothing
 
@@ -72,7 +77,34 @@ function sheet_() {
     // reformatting '2026-08-26' into something else on the way in.
     sh.getRange('A:A').setNumberFormat('@');
   }
+  ensureHeaders_(sh, HEADERS);
   return sh;
+}
+
+/**
+ * Make an EXISTING sheet's header row match HEADERS.
+ *
+ * The tabs are only given headers when they are created, so a sheet made by
+ * an older version keeps its old, shorter header row. New columns would then
+ * be written into cells whose header is blank — and rowsToObjects_ keys off
+ * that header row, so the values would be read back under empty names and
+ * lost. A redeploy would have looked like it worked.
+ *
+ * Only a header row that still matches is extended. If somebody has renamed
+ * or reordered a column by hand, this leaves it alone and reports so:
+ * guessing would mislabel data already in the sheet.
+ */
+function ensureHeaders_(sh, headers) {
+  var width = Math.max(sh.getLastColumn(), 1);
+  var have = sh.getRange(1, 1, 1, width).getValues()[0].map(function (v) {
+    return String(v == null ? '' : v).trim();
+  });
+  for (var i = 0; i < Math.min(have.length, headers.length); i++) {
+    if (have[i] && have[i] !== headers[i]) return false;   // diverged: hands off
+  }
+  if (width >= headers.length) return true;
+  sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+  return true;
 }
 
 /** 'YYYY-MM-DD' whatever the cell hands back. */
@@ -181,6 +213,7 @@ function daySheet_() {
     sh.getRange('A:A').setNumberFormat('@');
     sh.getRange('B:B').setNumberFormat('@');   // JSON is text, never a formula
   }
+  ensureHeaders_(sh, DAY_HEADERS);
   return sh;
 }
 
@@ -220,7 +253,8 @@ function dayPut_(date, state) {
 function doGet(e) {
   try {
     var p = (e && e.parameter) || {};
-    if (p.action === 'ping') return jsonOut_({ status: 'ok', app: 'KuBi History', version: 1 });
+    if (p.action === 'ping') return jsonOut_({ status: 'ok', app: 'KuBi History',
+                                               version: SCRIPT_VERSION, headers: HEADERS.length });
     if (!authed_(p.token)) return jsonOut_({ status: 'error', message: 'unauthorized' });
     if (p.action === 'historyAll') return jsonOut_(historyAll_());
     if (p.action === 'dayGet') return jsonOut_(dayGet_(p.date));

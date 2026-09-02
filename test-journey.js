@@ -1259,6 +1259,96 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
         earnedFu ? earnedFu.reason + ' due ' + earnedFu.due : 'nothing derived');
   check('Nobody was asked to book it', !(K.FOLLOW_UPS || []).some(f => f.caseId === 'MR0184-CROWN_SINGLE-01'));
 
+  // 42. THE WHOLE CHAIN, STEP BY STEP.
+  //     state -> next action -> owner -> closure, asserted at every stage of
+  //     one real case (a Crown: three stages, lab work, a review after).
+  //     Not "does it run", but "does it say the right thing at every point".
+  const CID = 'MR0184-CROWN_SINGLE-01', CA = 'A2';
+  const cStages = shut => [{ name: 'Preparation', done: true }, { name: 'Try-in', done: true },
+                           { name: 'Final fitting', done: shut, current: !shut }];
+  const cAppt = o => Object.assign({ id: CA, patient: 'Meera Reddy', chair: 2, doctor: 'Dr. Karan Mehta',
+    treatment: 'Crown delivery', procedureType: 'Crown', time: '10:15', caseId: CID,
+    caseStages: cStages(false) }, o || {});
+  const allBefore = () => { const m = {}; (K.TREATMENT_CHECKLISTS['Crown'] || []).forEach((_, i) => m[i] = true); return m; };
+  const allAfter = () => { const m = {}; (K.TREATMENT_CHECKLISTS_AFTER['Crown'] || []).forEach((_, i) => m[i] = true); return m; };
+  const allReady = () => { const m = {}; K.allReadinessTasks().forEach(k => m[k] = true); return m; };
+  const ranProc = { [CA]: { startedAt: new Date(), completedAt: new Date() } };
+  const chainCtx = over => Object.assign({
+    clinicStatus: { open: true, by: 'X', at: new Date(Date.now() - 3600000) },
+    procedureState: {}, closedCases: {}, treatmentChecked: {}, treatmentCheckedAfter: {},
+    readinessChecked: {}, equipmentStatus: {}, sterPacks: [], labReceived: {} }, over);
+
+  const CHAIN = [
+    ['clinic not open', { clinicStatus: { open: false }, appointments: [cAppt({ status: 'booked' })] },
+     'inTreatment', 'openClinic', 'front_desk_receptionist'],
+    ['readiness undone', { appointments: [cAppt({ status: 'booked' })] },
+     'inTreatment', 'readinessIncomplete', null],
+    ['patient arrived', { readinessChecked: allReady(), appointments: [cAppt({ status: 'arrived', statusAt: new Date() })] },
+     'inTreatment', 'seatPatient', 'front_desk_receptionist'],
+    ['in chair, unprepped', { readinessChecked: allReady(), appointments: [cAppt({ status: 'in_chair' })] },
+     'inTreatment', 'notReady', 'lead_dental_assistant'],
+    ['crown not back', { readinessChecked: allReady(), appointments: [cAppt({ status: 'in_chair' })],
+      treatmentChecked: { [CA]: allBefore() }, labReceived: { L1: false } },
+     'inTreatment', 'supplyMissing', 'front_desk_receptionist'],
+    ['crown received', { readinessChecked: allReady(), appointments: [cAppt({ status: 'in_chair' })],
+      treatmentChecked: { [CA]: allBefore() }, labReceived: { L1: true } },
+     'inTreatment', 'readyToStart', 'lead_dentist'],
+    ['underway', { readinessChecked: allReady(), appointments: [cAppt({ status: 'in_chair' })],
+      treatmentChecked: { [CA]: allBefore() }, labReceived: { L1: true },
+      procedureState: { [CA]: { startedAt: new Date() } } },
+     'inTreatment', 'inProgress', 'lead_dentist'],
+    ['not written up', { readinessChecked: allReady(), appointments: [cAppt({ status: 'in_chair' })],
+      treatmentChecked: { [CA]: allBefore() }, labReceived: { L1: true }, procedureState: ranProc },
+     'treatmentDone', 'needsDocumentation', 'lead_dentist'],
+    ['documented', { readinessChecked: allReady(), appointments: [cAppt({ status: 'in_chair' })],
+      treatmentChecked: { [CA]: allBefore() }, treatmentCheckedAfter: { [CA]: allAfter() },
+      labReceived: { L1: true }, procedureState: ranProc },
+     'treatmentDone', 'caseReadyToClose', 'lead_dentist'],
+    ['case closed', { readinessChecked: allReady(),
+      appointments: [cAppt({ status: 'done', caseStages: cStages(true) })],
+      treatmentChecked: { [CA]: allBefore() }, treatmentCheckedAfter: { [CA]: allAfter() },
+      labReceived: { L1: true }, procedureState: ranProc,
+      closedCases: { [CA]: { closedAt: new Date(), closedBy: 'Dr. Karan Mehta' } } },
+     'complete', 'readyToClose', 'clinic_manager'],
+  ];
+
+  const badState = [], badAction = [], badOwner = [];
+  CHAIN.forEach(row => {
+    const ctx = chainCtx(row[1]);
+    const na = K.nextAction(ctx);
+    const st = K.caseState(CID, ctx);
+    if (st !== row[2]) badState.push(row[0] + ': ' + st);
+    if (na.kind !== row[3]) badAction.push(row[0] + ': ' + na.kind);
+    if (row[4] && na.owner !== row[4]) badOwner.push(row[0] + ': ' + na.owner);
+  });
+  check('The case reports the right STATE at every step', badState.length === 0,
+        badState.join(' | ') || CHAIN.length + ' steps');
+  check('KuBi names the right NEXT ACTION at every step', badAction.length === 0,
+        badAction.join(' | ') || CHAIN.length + ' steps');
+  check('...and the right OWNER for it', badOwner.length === 0,
+        badOwner.join(' | ') || 'every step');
+
+  // The step that was missing entirely: documented, and still open. KuBi fell
+  // through to the seated-patient rule and told the dentist to START a
+  // treatment they had just finished.
+  const docCtx = chainCtx(CHAIN[8][1]);
+  check('A finished, documented treatment is never "ready to start"',
+        K.nextAction(docCtx).kind !== 'readyToStart', K.nextAction(docCtx).kind);
+
+  check('Nothing reads as closed until it is',
+        CHAIN.slice(0, 9).every(row => K.caseClosure(CID, chainCtx(row[1])).caseClosed === false));
+  const shutCtx = chainCtx(CHAIN[9][1]);
+  check('Closed, and the patient is due back',
+        K.caseClosure(CID, shutCtx).caseClosed === true && !!K.caseClosure(CID, shutCtx).followUp,
+        (K.caseClosure(CID, shutCtx).followUp || {}).reason || 'none');
+
+  // The same problem must not have two owners in two places.
+  const labExc = K.computeAttentionItems([], {}, {}, { open: true, at: new Date() }, {}, {}, {}, [], {}, {})
+                  .find(i => i.kind === 'labLate');
+  check('A lab blockage has one owner, not two',
+        K.nextAction(chainCtx(CHAIN[4][1])).owner === (labExc ? labExc.raisedOwner : 'front_desk_receptionist'),
+        'card: ' + K.nextAction(chainCtx(CHAIN[4][1])).owner + ', list: ' + (labExc ? labExc.raisedOwner : '-'));
+
   // SUMMARY
   await step(() => {}, 150);
   const failed = results.filter(r => !r.pass);

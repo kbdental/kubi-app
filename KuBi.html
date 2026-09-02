@@ -822,7 +822,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 02 Sept 2026, 06:07 am';
+  window.KuBi.BUILD_STAMP = 'Build: 02 Sept 2026, 06:25 am';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -34501,6 +34501,14 @@ window.KuBi.STRINGS = {
     en: 'Record it',
     hi: 'दर्ज करें'
   },
+  'now.readyToCloseCase': {
+    en: 'is documented and ready to close',
+    hi: 'दर्ज हो गया, बंद करने के लिए तैयार'
+  },
+  'now.closeTheCase': {
+    en: 'Close the case',
+    hi: 'केस बंद करें'
+  },
   'now.everythingReady': {
     en: 'Everything is ready',
     hi: 'सब तैयार है'
@@ -39354,6 +39362,27 @@ window.KuBi.nextAction = function (ctx) {
     };
   }
 
+  //    ...and the step after that: written up, and still not closed. There
+  //    was no rule for this, so a finished, fully documented treatment fell
+  //    through to the seated-patient rule below and KuBi told the dentist
+  //    to START a procedure they had just finished. One press from done is
+  //    not the same as nothing to do.
+  const closable = appts.find(function (a) {
+    const p = proc[a.id];
+    if (!(p && p.completedAt) || closed[a.id]) return false;
+    return window.KuBi.closureGate(a.procedureType, after[a.id] || {}).canClose;
+  });
+  if (closable) {
+    return {
+      kind: 'caseReadyToClose',
+      appt: closable,
+      area: 'treatment',
+      subtab: 'after',
+      apptId: closable.id,
+      owner: 'lead_dentist'
+    };
+  }
+
   // 5. Supplies missing for a treatment still to come today — a
   //    prerequisite, so checked before anyone is seated.
   const upcoming = appts.filter(function (a) {
@@ -39372,9 +39401,15 @@ window.KuBi.nextAction = function (ctx) {
         return m.name;
       }),
       labMissing: sup.labMissing,
-      area: 'clinic',
-      subtab: 'inventory',
-      owner: 'lead_dental_assistant'
+      // Where the blockage IS decides where to send somebody, and who to
+      // name. A missing material is the assistant's, in Inventory; work
+      // still at the laboratory is Front Desk's, on the Lab tab — they are
+      // the ones who ring the lab. The attention list already said Front
+      // Desk for a late case, and the two must not disagree about whose
+      // job the same problem is.
+      area: sup.labMissing ? 'patients' : 'clinic',
+      subtab: sup.labMissing ? 'lab' : 'inventory',
+      owner: sup.labMissing ? 'front_desk_receptionist' : 'lead_dental_assistant'
     };
   }
 
@@ -40604,6 +40639,11 @@ window.KuBi.Today = function Today({
       cta = t('now.recordIt', lang);
       tone = 'now-alert';
       mark = '🔴';
+    } else if (na.kind === 'caseReadyToClose') {
+      headline = na.appt.patient + ' — ' + na.appt.procedureType + ' ' + t('now.readyToCloseCase', lang);
+      cta = t('now.closeTheCase', lang);
+      tone = 'now-good';
+      mark = '🔵';
     } else if (na.kind === 'readyToStart') {
       headline = na.appt.patient + ' ' + t('now.isInChair', lang) + ' ' + na.appt.chair;
       detail = na.appt.procedureType + ' — ' + t('now.readyToStart', lang);

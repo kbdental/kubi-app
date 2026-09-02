@@ -13,7 +13,7 @@ React is bundled in.
 ```bash
 npm install
 npm run build     # compiles src/ -> KuBi.html
-npm test          # builds, then runs 260 journey checks + 7 bundle checks
+npm test          # builds, then runs 267 journey checks + 7 bundle checks
 ```
 
 `KuBi.html` is generated. Edit `src/`, never the bundle.
@@ -316,6 +316,35 @@ READY / LOW / NOT AVAILABLE the clinic already reads, and the reorder list.
 
 Expiry is **opt-in per material**. Gloves and gauze do not need a date, and
 asking for one would be the very thing the principle forbids.
+
+## The chain, asserted step by step
+
+The journey test walks one real case — a Crown: three stages, lab work, a
+review after — and checks **state → next action → owner → closure** at every
+stage. Not "does it run", but "does it say the right thing at every point of
+a day".
+
+| what is true | state | next action | owner |
+|---|---|---|---|
+| clinic not open | inTreatment | openClinic | Front Desk |
+| readiness undone | inTreatment | readinessIncomplete | section owner |
+| patient arrived | inTreatment | seatPatient | Front Desk |
+| in chair, unprepped | inTreatment | notReady | Lead DA |
+| crown not back | inTreatment | supplyMissing | Front Desk |
+| crown received | inTreatment | readyToStart | Lead Dentist |
+| underway | inTreatment | inProgress | Lead Dentist |
+| not written up | treatmentDone | needsDocumentation | Lead Dentist |
+| documented | treatmentDone | caseReadyToClose | Lead Dentist |
+| case closed | complete | readyToClose | Clinic Manager |
+
+Two defects this found, both since fixed:
+
+- **there was no step for "documented, not yet closed"**. A finished, fully
+  written-up treatment fell through to the seated-patient rule, so KuBi told
+  the dentist to START a procedure they had just finished
+- **a lab blockage had two owners**. The NOW card said Lead Dental Assistant
+  while the attention list said Front Desk, for the same crown. Front Desk
+  rings the lab, so the card now says so and routes to the Lab tab
 
 ## Two rules that hold the design together
 

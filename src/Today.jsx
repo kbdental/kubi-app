@@ -124,6 +124,10 @@ window.KuBi.Today = function Today({ currentUser, lang, clinicStatus, appointmen
           detail = na.missing.length ? t('treatmentPrep.afterIncomplete', lang) + ' ' + na.missing[0] : '';
           cta = t('now.recordIt', lang);
           tone = 'now-alert'; mark = '🔴';
+        } else if (na.kind === 'caseReadyToClose') {
+          headline = na.appt.patient + ' — ' + na.appt.procedureType + ' ' + t('now.readyToCloseCase', lang);
+          cta = t('now.closeTheCase', lang);
+          tone = 'now-good'; mark = '🔵';
         } else if (na.kind === 'readyToStart') {
           headline = na.appt.patient + ' ' + t('now.isInChair', lang) + ' ' + na.appt.chair;
           detail = na.appt.procedureType + ' — ' + t('now.readyToStart', lang);

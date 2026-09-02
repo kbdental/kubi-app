@@ -118,6 +118,20 @@ window.KuBi.nextAction = function (ctx) {
     return { kind: 'needsDocumentation', appt: undocumented, missing: missing, area: 'treatment', subtab: 'after', apptId: undocumented.id, owner: 'lead_dentist' };
   }
 
+  //    ...and the step after that: written up, and still not closed. There
+  //    was no rule for this, so a finished, fully documented treatment fell
+  //    through to the seated-patient rule below and KuBi told the dentist
+  //    to START a procedure they had just finished. One press from done is
+  //    not the same as nothing to do.
+  const closable = appts.find(function (a) {
+    const p = proc[a.id];
+    if (!(p && p.completedAt) || closed[a.id]) return false;
+    return window.KuBi.closureGate(a.procedureType, after[a.id] || {}).canClose;
+  });
+  if (closable) {
+    return { kind: 'caseReadyToClose', appt: closable, area: 'treatment', subtab: 'after', apptId: closable.id, owner: 'lead_dentist' };
+  }
+
   // 5. Supplies missing for a treatment still to come today — a
   //    prerequisite, so checked before anyone is seated.
   const upcoming = appts.filter(function (a) {
@@ -133,8 +147,15 @@ window.KuBi.nextAction = function (ctx) {
       kind: 'supplyMissing', appt: blockedSupply,
       missing: sup.blocking.map(function (m) { return m.name; }),
       labMissing: sup.labMissing,
-      area: 'clinic', subtab: 'inventory',
-      owner: 'lead_dental_assistant',
+      // Where the blockage IS decides where to send somebody, and who to
+      // name. A missing material is the assistant's, in Inventory; work
+      // still at the laboratory is Front Desk's, on the Lab tab — they are
+      // the ones who ring the lab. The attention list already said Front
+      // Desk for a late case, and the two must not disagree about whose
+      // job the same problem is.
+      area: sup.labMissing ? 'patients' : 'clinic',
+      subtab: sup.labMissing ? 'lab' : 'inventory',
+      owner: sup.labMissing ? 'front_desk_receptionist' : 'lead_dental_assistant',
     };
   }
 

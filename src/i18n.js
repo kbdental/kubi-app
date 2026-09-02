@@ -97,6 +97,8 @@ window.KuBi.STRINGS = {
   'now.underway': { en: 'Procedure is underway', hi: 'प्रोसीज़र चल रहा है' },
   'now.finishedNotClosed': { en: 'treatment finished, not yet recorded', hi: 'इलाज पूरा हुआ, अभी दर्ज नहीं' },
   'now.recordIt': { en: 'Record it', hi: 'दर्ज करें' },
+  'now.readyToCloseCase': { en: 'is documented and ready to close', hi: 'दर्ज हो गया, बंद करने के लिए तैयार' },
+  'now.closeTheCase': { en: 'Close the case', hi: 'केस बंद करें' },
   'now.everythingReady': { en: 'Everything is ready', hi: 'सब तैयार है' },
   'now.sortIt': { en: 'Sort it out', hi: 'ठीक करें' },
   'now.hasArrived': { en: 'has arrived', hi: 'आ गए हैं' },

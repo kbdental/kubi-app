@@ -635,8 +635,13 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   w.fetch = (url, init) => { sent.push(url); return Promise.reject(new Error('offline')); };
   const offlineLoad = await w.KuBi.historySync.dayLoad(today);
   check('An unreachable sheet returns null, not an empty day', offlineLoad === null);
-  const offlineSave = await w.KuBi.historySync.daySave(today, wire);
-  check('A failed save reports failure', offlineSave === false);
+  const offlineSave = await w.KuBi.historySync.daySave(today, wire, null);
+  // Not a bare false any more: 'could not reach the sheet' and 'somebody
+  // else wrote first' need different answers, because retrying the second
+  // one blindly would overwrite their work.
+  check('A failed save says it failed, and why',
+        offlineSave.ok === false && offlineSave.reason === 'unreachable' && !offlineSave.conflict,
+        offlineSave.reason);
 
   w.fetch = (url, init) => {
     sent.push(url);
@@ -660,13 +665,14 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
         firstDay === null ? 'reported as unreachable' : 'reported as empty');
   sent = [];
   const big = Object.assign({}, wire, { closingChecked: { blob: 'x'.repeat(K.DAY_MAX_CHARS + 100) } });
-  const tooBig = await w.KuBi.historySync.daySave(today, big);
-  check('An oversized day is refused, not truncated', tooBig === false && sent.length === 0,
-        sent.length + ' requests sent');
+  const tooBig = await w.KuBi.historySync.daySave(today, big, 1);
+  check('An oversized day is refused, not truncated',
+        tooBig.ok === false && tooBig.reason === 'tooBig' && sent.length === 0,
+        sent.length + ' requests sent, ' + tooBig.chars + ' chars');
 
   w.KuBi.SHEETS_CONFIG = { url: '', token: '' };
   check('With no sheet configured nothing is sent',
-        (await w.KuBi.historySync.daySave(today, wire)) === false &&
+        (await w.KuBi.historySync.daySave(today, wire, null)).ok === false &&
         (await w.KuBi.historySync.dayLoad(today)) === null);
   w.KuBi.SHEETS_CONFIG = dayCfg;
   delete w.fetch;
@@ -1439,6 +1445,102 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
   check('...with headroom, not by a whisker',
         auChars < K.DAY_MAX_CHARS * 0.9,
         Math.round((1 - auChars / K.DAY_MAX_CHARS) * 100) + '% spare');
+
+  // 44. TWO TERMINALS, ONE DAY.
+  //     A clinic runs on more than one screen. Both save the whole day, the
+  //     day is one record, and the second save used to win — so the first
+  //     person's work disappeared, and the append-only audit lost an entry.
+  const mgBase = function () {
+    return {
+      clinicStatus: { open: true, by: 'Ramesh Yadav', at: new Date(Date.now() - 3600000) },
+      readinessChecked: {}, appointments: [
+        { id: 'A1', patient: 'Arjun Prasad', chair: 1, status: 'waiting', procedureType: 'RCT',
+          time: '09:30', statusAt: new Date(Date.now() - 1800000) },
+      ],
+      treatmentChecked: {}, treatmentCheckedAfter: {}, closingChecked: {}, procedureState: {},
+      closedCases: {}, equipmentStatus: {}, repairs: [], labReceived: {}, sterPacks: [], audit: [],
+    };
+  };
+
+  // Reception ticks a readiness task.
+  const mgRecep = mgBase();
+  mgRecep.readinessChecked['staff_entry-g0-t0'] = { by: 'Nisha Verma', at: new Date() };
+  mgRecep.audit = [{ at: new Date(Date.now() - 1000), by: 'Nisha Verma', area: 'readiness',
+                     action: 'readinessChecked', subject: 'staff_entry-g0-t0' }];
+
+  // At the same moment the surgery seats the patient.
+  const mgSurg = mgBase();
+  mgSurg.appointments[0].status = 'in_chair';
+  mgSurg.appointments[0].statusAt = new Date();
+  mgSurg.audit = [{ at: new Date(), by: 'Priya Sharma', area: 'patients',
+                    action: 'statusChanged', subject: 'A1', detail: 'in_chair' }];
+
+  const mgMerged = K.mergeDay(mgSurg, mgRecep);
+  check('Neither terminal loses its work',
+        Object.keys(mgMerged.readinessChecked).length === 1 &&
+        mgMerged.appointments[0].status === 'in_chair',
+        'tick kept AND patient seated');
+  check('The audit keeps every entry, from both',
+        mgMerged.audit.length === 2 &&
+        mgMerged.audit.some(e => e.by === 'Nisha Verma') &&
+        mgMerged.audit.some(e => e.by === 'Priya Sharma'),
+        mgMerged.audit.length + ' entries');
+  check('...in the order they happened',
+        new Date(mgMerged.audit[0].at).getTime() <= new Date(mgMerged.audit[1].at).getTime());
+  check('The same entry twice is counted once',
+        K.mergeDay(mgRecep, mgRecep).audit.length === 1);
+
+  // A status has a time on it, so the later one is what happened.
+  const mgStale = mgBase();
+  mgStale.appointments[0].status = 'arrived';
+  mgStale.appointments[0].statusAt = new Date(Date.now() - 7200000);
+  check('A stale status does not undo a newer one',
+        K.mergeDay(mgStale, mgSurg).appointments[0].status === 'in_chair',
+        'older "arrived" did not overwrite "in chair"');
+
+  // A repair somebody fixed stays fixed.
+  const mgFixed = mgBase();
+  mgFixed.repairs = [{ id: 'R1', what: 'Tap', done: true, doneAt: new Date(), at: new Date(Date.now() - 86400000) }];
+  const mgBroken = mgBase();
+  mgBroken.repairs = [{ id: 'R1', what: 'Tap', done: false, at: new Date(Date.now() - 86400000) }];
+  check('A fixed fault is not un-fixed by a stale copy',
+        K.mergeDay(mgBroken, mgFixed).repairs[0].done === true &&
+        K.mergeDay(mgFixed, mgBroken).repairs[0].done === true);
+
+  // Packs only move forward.
+  const stagesKnown = (K.STER_STAGES || []);
+  if (stagesKnown.length > 1) {
+    const mgEarly = mgBase(); mgEarly.sterPacks = [{ id: 'PK-1', stage: stagesKnown[0] }];
+    const mgLater = mgBase(); mgLater.sterPacks = [{ id: 'PK-1', stage: stagesKnown[stagesKnown.length - 1] }];
+    check('A sterilization pack never moves backwards',
+          K.mergeDay(mgEarly, mgLater).sterPacks[0].stage === stagesKnown[stagesKnown.length - 1]);
+  }
+
+  // Checklists merge per step, so two people ticking different items keep both.
+  const mgA = mgBase(); mgA.treatmentChecked = { A1: { 0: true } };
+  const mgB = mgBase(); mgB.treatmentChecked = { A1: { 3: true } };
+  const mgTicks = K.mergeDay(mgA, mgB).treatmentChecked.A1;
+  check('Two people ticking different steps keep both',
+        mgTicks[0] === true && mgTicks[3] === true);
+
+  // Merging must never invent or drop a field.
+  check('A merged day still has every field',
+        K.DAY_FIELDS.every(f => f in mgMerged), K.DAY_FIELDS.length + ' fields');
+  check('Merging with nothing stored returns what we have',
+        K.mergeDay(mgSurg, null) === mgSurg);
+
+  // The audit cap still holds after a merge, or a busy pair of terminals
+  // would push the day past what can be stored.
+  let mgBigA = mgBase(), mgBigB = mgBase();
+  for (let n = 0; n < K.AUDIT_MAX; n++) {
+    mgBigA.audit.push({ at: new Date(Date.now() - n * 1000), by: 'A', area: 'clinic', action: 'clinicOpened', subject: 'x' + n });
+    mgBigB.audit.push({ at: new Date(Date.now() - n * 1000), by: 'B', area: 'clinic', action: 'clinicOpened', subject: 'y' + n });
+  }
+  check('A merged audit still respects the ceiling',
+        K.mergeDay(mgBigA, mgBigB).audit.length === K.AUDIT_MAX,
+        K.mergeDay(mgBigA, mgBigB).audit.length + ' entries');
+  check('...and keeps the most recent, not the oldest',
+        K.mergeDay(mgBigA, mgBigB).audit.slice(-1)[0].at >= K.mergeDay(mgBigA, mgBigB).audit[0].at);
 
   // SUMMARY
   await step(() => {}, 150);

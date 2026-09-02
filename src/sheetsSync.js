@@ -61,7 +61,11 @@ window.KuBi.historySync = (function () {
       window.fetch(url, init)
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (json) {
-          finish(json && json.status === 'ok' ? json : null);
+          if (json && json.status === 'ok') return finish(json);
+          // A conflict is the server answering clearly, not a failure to
+          // reach it. Callers that can handle one ask for it.
+          if (json && json.status === 'conflict' && opts.allowConflict) return finish(json);
+          finish(null);
         })
         .catch(function () { finish(null); });
     });
@@ -111,16 +115,34 @@ window.KuBi.historySync = (function () {
 
     // Resolves true only on confirmed success, so the caller knows whether
     // the day is safely stored or still only in this browser.
-    daySave: function (date, state) {
+    // Three outcomes, and the caller must tell them apart:
+    //   { ok: true, rev }        stored
+    //   { conflict: true, ... }  somebody wrote first; theirs is returned
+    //   { ok: false }            could not be stored at all
+    //
+    // A bare true/false collapsed "somebody else got there first" into
+    // "failed", and a retry would then have overwritten their work.
+    daySave: function (date, state, baseRev, by) {
       let payload;
       try {
         payload = JSON.stringify(state);
       } catch (e) {
-        return Promise.resolve(false);   // circular or unserialisable: never throw
+        return Promise.resolve({ ok: false, reason: 'unserialisable' });
       }
-      if (payload.length > window.KuBi.DAY_MAX_CHARS) return Promise.resolve(false);
-      return request({ action: 'dayPut', body: { date: date, state: state } })
-        .then(function (json) { return !!json; });
+      if (payload.length > window.KuBi.DAY_MAX_CHARS) {
+        return Promise.resolve({ ok: false, reason: 'tooBig', chars: payload.length });
+      }
+      return request({ action: 'dayPut', allowConflict: true,
+                       body: { date: date, state: state,
+                               baseRev: baseRev === undefined ? null : baseRev,
+                               by: by || null } })
+        .then(function (json) {
+          if (!json) return { ok: false, reason: 'unreachable' };
+          if (json.status === 'conflict') {
+            return { ok: false, conflict: true, rev: json.rev, record: json.record };
+          }
+          return { ok: true, rev: json.rev };
+        });
     },
   };
 })();

@@ -135,6 +135,9 @@ function useClinicDay() {
   //      the connection returns.
   const armed = React.useRef(false);
   const saveTimer = React.useRef(null);
+  const rev = React.useRef(null);          // the revision this browser last saw
+  const retryAt = React.useRef(0);         // how long to wait after a failure
+  const inFlight = React.useRef(false);    // one save at a time, always
 
   React.useEffect(function () {
     if (!window.KuBi.historySync.isConfigured()) return;
@@ -144,24 +147,86 @@ function useClinicDay() {
       if (result === null) return;            // unreachable: stay in memory, stay disarmed
       // Reached the sheet. Either it holds today, or it holds nothing yet —
       // both mean writing is safe. Only the first restores anything.
-      if (window.KuBi.dayIsForToday(result.record)) window.KuBi.restoreDay(day, result.record.state);
+      if (window.KuBi.dayIsForToday(result.record)) {
+        window.KuBi.restoreDay(day, result.record.state);
+        rev.current = result.record.rev === undefined ? null : result.record.rev;
+      } else {
+        rev.current = null;                   // nothing stored for today yet
+      }
       armed.current = true;
     });
     return function () { cancelled = true; };
   }, []);
 
-  // Staff tick things quickly; one write per tick would be a request per
-  // keystroke. Settle first, then write once.
+  // ---- storing it ------------------------------------------------------
+  //
+  // Three things this has to survive, none of them rare in a clinic:
+  //
+  //   ANOTHER TERMINAL WROTE FIRST. The write is refused rather than
+  //   winning, because winning would delete somebody's work. The stored day
+  //   is merged with this one — every tick and every audit entry from both
+  //   sides — and written back on the revision we were just handed.
+  //
+  //   THE CONNECTION DROPPED. The save is retried, backing off, rather than
+  //   waiting for the next time somebody happens to tick something. A quiet
+  //   clinic must not be a clinic that silently stops saving.
+  //
+  //   TWO SAVES AT ONCE. Only one is ever in flight; the day is written
+  //   whole, so overlapping writes would race each other.
   const DEBOUNCE_MS = 2500;
+  const RETRY_MIN_MS = 4000;
+  const RETRY_MAX_MS = 60000;
+
+  function storeDay() {
+    if (inFlight.current) return Promise.resolve();
+    inFlight.current = true;
+    const date = window.KuBi.operatingDate();
+    const mine = window.KuBi.snapshotDay(day);
+
+    return window.KuBi.historySync.daySave(date, mine, rev.current, user.name)
+      .then(function (res) {
+        if (res.ok) {
+          rev.current = res.rev;
+          retryAt.current = 0;
+          return;
+        }
+
+        if (res.conflict) {
+          // Somebody else saved while we were working. Keep both.
+          const merged = window.KuBi.mergeDay(mine, res.record && res.record.state);
+          window.KuBi.restoreDay(day, merged);
+          rev.current = res.rev;
+          return window.KuBi.historySync.daySave(date, merged, res.rev, user.name)
+            .then(function (again) {
+              if (again.ok) { rev.current = again.rev; retryAt.current = 0; }
+              else { retryAt.current = RETRY_MIN_MS; }   // try the whole thing again shortly
+            });
+        }
+
+        // Could not be stored. Back off, but keep trying.
+        retryAt.current = Math.min(
+          retryAt.current ? retryAt.current * 2 : RETRY_MIN_MS, RETRY_MAX_MS);
+      })
+      .then(function () { inFlight.current = false; })
+      .catch(function () { inFlight.current = false; retryAt.current = RETRY_MIN_MS; });
+  }
+
   const watched = window.KuBi.DAY_FIELDS.map(function (f) { return day[f]; });
   React.useEffect(function () {
     if (!armed.current || !window.KuBi.historySync.isConfigured()) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(function () {
-      window.KuBi.historySync.daySave(window.KuBi.operatingDate(), window.KuBi.snapshotDay(day));
-    }, DEBOUNCE_MS);
+    saveTimer.current = setTimeout(storeDay, DEBOUNCE_MS);
     return function () { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, watched);
+
+  // A failed save is not left waiting for somebody to tick something else.
+  React.useEffect(function () {
+    if (!window.KuBi.historySync.isConfigured()) return;
+    const timer = setInterval(function () {
+      if (armed.current && retryAt.current > 0 && !inFlight.current) storeDay();
+    }, RETRY_MIN_MS);
+    return function () { clearInterval(timer); };
+  }, []);
 
   return day;
 }

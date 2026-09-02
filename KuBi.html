@@ -839,7 +839,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 02 Sept 2026, 10:29 am';
+  window.KuBi.BUILD_STAMP = 'Build: 02 Sept 2026, 12:16 pm';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -40194,6 +40194,159 @@ window.KuBi.dayIsForToday = function (record) {
   return !!(record && record.date && record.date === window.KuBi.operatingDate());
 };
 
+// ---- src/mergeDay.js ----
+// mergeDay.js — two terminals, one day.
+//
+// A clinic runs on more than one screen: reception marks a patient arrived
+// while the surgery ticks a pre-treatment check. Both save the whole day,
+// the day is one record, and the second save wins — so the first person's
+// work disappears, and an append-only audit loses an entry it should never
+// have lost.
+//
+// This merges two versions of a day instead of picking one. It is not a
+// general algorithm: every field is merged by a rule that suits what that
+// field MEANS, which is the only way to get this right.
+//
+// WHERE THE RULES COME FROM
+//   · a tick is work somebody did — keep both sides' ticks
+//   · an append-only log is exactly that — keep every entry, from either
+//   · a status has a time — the later one is what happened
+//   · a fixed fault stays fixed — being repaired is not undone by a stale
+//     copy that still thought it was broken
+//
+// WHAT THIS CANNOT DO
+// Presence cannot be told from deletion. If one terminal UN-ticks something
+// while another still has it ticked, the tick survives. That is deliberate:
+// losing a tick makes work look undone and somebody redoes it, which is
+// wasteful but safe. It is recorded here so nobody assumes otherwise, and a
+// tombstone would be the fix if it ever matters.
+
+window.KuBi = window.KuBi || {};
+function _time(v) {
+  if (!v) return 0;
+  const t = new Date(v).getTime();
+  return isNaN(t) ? 0 : t;
+}
+
+/** Union two id-keyed maps; where both hold a key, the later one wins. */
+function _mergeMap(mine, theirs) {
+  const out = Object.assign({}, theirs || {}, {});
+  Object.keys(mine || {}).forEach(function (k) {
+    const a = mine[k];
+    const b = (theirs || {})[k];
+    if (b === undefined) {
+      out[k] = a;
+      return;
+    }
+    const ta = a && a.at ? _time(a.at) : null;
+    const tb = b && b.at ? _time(b.at) : null;
+    if (ta !== null && tb !== null) {
+      out[k] = ta >= tb ? a : b;
+      return;
+    }
+    // No times to compare: keep the local value. Whoever is sitting in
+    // front of this screen just acted and is present to notice if it is
+    // wrong; the other terminal is not.
+    out[k] = a;
+  });
+  return out;
+}
+
+/** Two levels deep: appointment id -> step index -> ticked. */
+function _mergeNestedTicks(mine, theirs) {
+  const out = Object.assign({}, theirs || {});
+  Object.keys(mine || {}).forEach(function (id) {
+    out[id] = Object.assign({}, (theirs || {})[id] || {}, mine[id] || {});
+  });
+  return out;
+}
+
+/** Union two lists by id, resolving collisions with `pick`. */
+function _mergeById(mine, theirs, pick) {
+  const byId = {};
+  (theirs || []).forEach(function (x) {
+    byId[x.id] = x;
+  });
+  (mine || []).forEach(function (x) {
+    byId[x.id] = byId[x.id] === undefined ? x : pick(x, byId[x.id]);
+  });
+  return Object.keys(byId).map(function (k) {
+    return byId[k];
+  });
+}
+
+/** What makes an audit entry the same entry, for de-duplication. */
+function _auditKey(e) {
+  return [_time(e.at), e.by, e.area, e.action, e.subject, e.detail].join('|');
+}
+
+/**
+ * Merge the day THIS browser has over the day the sheet holds.
+ *
+ * `mine` is local and generally newer; `theirs` is what somebody else
+ * stored while we were working. Neither is discarded.
+ */
+window.KuBi.mergeDay = function (mine, theirs) {
+  if (!theirs) return mine || null;
+  if (!mine) return theirs;
+  const out = {};
+
+  // The clinic being open, and by whom, is a moment in time.
+  out.clinicStatus = _time((mine.clinicStatus || {}).at) >= _time((theirs.clinicStatus || {}).at) ? mine.clinicStatus : theirs.clinicStatus;
+
+  // Ticks are work. Keep everybody's.
+  out.readinessChecked = _mergeMap(mine.readinessChecked, theirs.readinessChecked);
+  out.closingChecked = _mergeMap(mine.closingChecked, theirs.closingChecked);
+  out.closedCases = _mergeMap(mine.closedCases, theirs.closedCases);
+  out.labReceived = _mergeMap(mine.labReceived, theirs.labReceived);
+  out.equipmentStatus = _mergeMap(mine.equipmentStatus, theirs.equipmentStatus);
+  out.procedureState = _mergeMap(mine.procedureState, theirs.procedureState);
+  out.treatmentChecked = _mergeNestedTicks(mine.treatmentChecked, theirs.treatmentChecked);
+  out.treatmentCheckedAfter = _mergeNestedTicks(mine.treatmentCheckedAfter, theirs.treatmentCheckedAfter);
+
+  // A patient's status has a time on it, so the later one is what happened.
+  out.appointments = _mergeById(mine.appointments, theirs.appointments, function (a, b) {
+    return _time(a.statusAt) >= _time(b.statusAt) ? a : b;
+  });
+
+  // A repair that somebody fixed stays fixed. A stale copy still thinking
+  // it is broken must not undo that.
+  out.repairs = _mergeById(mine.repairs, theirs.repairs, function (a, b) {
+    if (a.done !== b.done) return a.done ? a : b;
+    return _time(a.doneAt) >= _time(b.doneAt) ? a : b;
+  });
+
+  // A pack only moves forward through the chain.
+  const stageOrder = window.KuBi.STER_STAGES || [];
+  out.sterPacks = _mergeById(mine.sterPacks, theirs.sterPacks, function (a, b) {
+    const ia = stageOrder.indexOf(a.stage);
+    const ib = stageOrder.indexOf(b.stage);
+    return ia >= ib ? a : b;
+  });
+
+  // The audit is append-only. Every entry from either side survives, in
+  // order, with duplicates collapsed. This is the field that matters most:
+  // a record of who did what is worthless if a save can erase part of it.
+  const seen = {};
+  const entries = (theirs.audit || []).concat(mine.audit || []).filter(function (e) {
+    const k = _auditKey(e);
+    if (seen[k]) return false;
+    seen[k] = true;
+    return true;
+  });
+  entries.sort(function (a, b) {
+    return _time(a.at) - _time(b.at);
+  });
+  out.audit = window.KuBi.AUDIT_MAX && entries.length > window.KuBi.AUDIT_MAX ? entries.slice(entries.length - window.KuBi.AUDIT_MAX) : entries;
+
+  // Anything added to the day later and not given a rule here: keep the
+  // local value rather than dropping the field.
+  (window.KuBi.DAY_FIELDS || []).forEach(function (f) {
+    if (!(f in out)) out[f] = f in mine ? mine[f] : theirs[f];
+  });
+  return out;
+};
+
 // ---- src/sheetsSync.js ----
 // sheetsSync.js â€” the one place that talks to Google Sheets.
 //
@@ -40266,7 +40419,11 @@ window.KuBi.historySync = function () {
       window.fetch(url, init).then(function (r) {
         return r.ok ? r.json() : null;
       }).then(function (json) {
-        finish(json && json.status === 'ok' ? json : null);
+        if (json && json.status === 'ok') return finish(json);
+        // A conflict is the server answering clearly, not a failure to
+        // reach it. Callers that can handle one ask for it.
+        if (json && json.status === 'conflict' && opts.allowConflict) return finish(json);
+        finish(null);
       }).catch(function () {
         finish(null);
       });
@@ -40329,22 +40486,56 @@ window.KuBi.historySync = function () {
     },
     // Resolves true only on confirmed success, so the caller knows whether
     // the day is safely stored or still only in this browser.
-    daySave: function (date, state) {
+    // Three outcomes, and the caller must tell them apart:
+    //   { ok: true, rev }        stored
+    //   { conflict: true, ... }  somebody wrote first; theirs is returned
+    //   { ok: false }            could not be stored at all
+    //
+    // A bare true/false collapsed "somebody else got there first" into
+    // "failed", and a retry would then have overwritten their work.
+    daySave: function (date, state, baseRev, by) {
       let payload;
       try {
         payload = JSON.stringify(state);
       } catch (e) {
-        return Promise.resolve(false); // circular or unserialisable: never throw
+        return Promise.resolve({
+          ok: false,
+          reason: 'unserialisable'
+        });
       }
-      if (payload.length > window.KuBi.DAY_MAX_CHARS) return Promise.resolve(false);
+      if (payload.length > window.KuBi.DAY_MAX_CHARS) {
+        return Promise.resolve({
+          ok: false,
+          reason: 'tooBig',
+          chars: payload.length
+        });
+      }
       return request({
         action: 'dayPut',
+        allowConflict: true,
         body: {
           date: date,
-          state: state
+          state: state,
+          baseRev: baseRev === undefined ? null : baseRev,
+          by: by || null
         }
       }).then(function (json) {
-        return !!json;
+        if (!json) return {
+          ok: false,
+          reason: 'unreachable'
+        };
+        if (json.status === 'conflict') {
+          return {
+            ok: false,
+            conflict: true,
+            rev: json.rev,
+            record: json.record
+          };
+        }
+        return {
+          ok: true,
+          rev: json.rev
+        };
       });
     }
   };
@@ -43615,6 +43806,10 @@ function useClinicDay() {
   //      the connection returns.
   const armed = React.useRef(false);
   const saveTimer = React.useRef(null);
+  const rev = React.useRef(null); // the revision this browser last saw
+  const retryAt = React.useRef(0); // how long to wait after a failure
+  const inFlight = React.useRef(false); // one save at a time, always
+
   React.useEffect(function () {
     if (!window.KuBi.historySync.isConfigured()) return;
     let cancelled = false;
@@ -43623,7 +43818,12 @@ function useClinicDay() {
       if (result === null) return; // unreachable: stay in memory, stay disarmed
       // Reached the sheet. Either it holds today, or it holds nothing yet —
       // both mean writing is safe. Only the first restores anything.
-      if (window.KuBi.dayIsForToday(result.record)) window.KuBi.restoreDay(day, result.record.state);
+      if (window.KuBi.dayIsForToday(result.record)) {
+        window.KuBi.restoreDay(day, result.record.state);
+        rev.current = result.record.rev === undefined ? null : result.record.rev;
+      } else {
+        rev.current = null; // nothing stored for today yet
+      }
       armed.current = true;
     });
     return function () {
@@ -43631,22 +43831,81 @@ function useClinicDay() {
     };
   }, []);
 
-  // Staff tick things quickly; one write per tick would be a request per
-  // keystroke. Settle first, then write once.
+  // ---- storing it ------------------------------------------------------
+  //
+  // Three things this has to survive, none of them rare in a clinic:
+  //
+  //   ANOTHER TERMINAL WROTE FIRST. The write is refused rather than
+  //   winning, because winning would delete somebody's work. The stored day
+  //   is merged with this one — every tick and every audit entry from both
+  //   sides — and written back on the revision we were just handed.
+  //
+  //   THE CONNECTION DROPPED. The save is retried, backing off, rather than
+  //   waiting for the next time somebody happens to tick something. A quiet
+  //   clinic must not be a clinic that silently stops saving.
+  //
+  //   TWO SAVES AT ONCE. Only one is ever in flight; the day is written
+  //   whole, so overlapping writes would race each other.
   const DEBOUNCE_MS = 2500;
+  const RETRY_MIN_MS = 4000;
+  const RETRY_MAX_MS = 60000;
+  function storeDay() {
+    if (inFlight.current) return Promise.resolve();
+    inFlight.current = true;
+    const date = window.KuBi.operatingDate();
+    const mine = window.KuBi.snapshotDay(day);
+    return window.KuBi.historySync.daySave(date, mine, rev.current, user.name).then(function (res) {
+      if (res.ok) {
+        rev.current = res.rev;
+        retryAt.current = 0;
+        return;
+      }
+      if (res.conflict) {
+        // Somebody else saved while we were working. Keep both.
+        const merged = window.KuBi.mergeDay(mine, res.record && res.record.state);
+        window.KuBi.restoreDay(day, merged);
+        rev.current = res.rev;
+        return window.KuBi.historySync.daySave(date, merged, res.rev, user.name).then(function (again) {
+          if (again.ok) {
+            rev.current = again.rev;
+            retryAt.current = 0;
+          } else {
+            retryAt.current = RETRY_MIN_MS;
+          } // try the whole thing again shortly
+        });
+      }
+
+      // Could not be stored. Back off, but keep trying.
+      retryAt.current = Math.min(retryAt.current ? retryAt.current * 2 : RETRY_MIN_MS, RETRY_MAX_MS);
+    }).then(function () {
+      inFlight.current = false;
+    }).catch(function () {
+      inFlight.current = false;
+      retryAt.current = RETRY_MIN_MS;
+    });
+  }
   const watched = window.KuBi.DAY_FIELDS.map(function (f) {
     return day[f];
   });
   React.useEffect(function () {
     if (!armed.current || !window.KuBi.historySync.isConfigured()) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(function () {
-      window.KuBi.historySync.daySave(window.KuBi.operatingDate(), window.KuBi.snapshotDay(day));
-    }, DEBOUNCE_MS);
+    saveTimer.current = setTimeout(storeDay, DEBOUNCE_MS);
     return function () {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
   }, watched);
+
+  // A failed save is not left waiting for somebody to tick something else.
+  React.useEffect(function () {
+    if (!window.KuBi.historySync.isConfigured()) return;
+    const timer = setInterval(function () {
+      if (armed.current && retryAt.current > 0 && !inFlight.current) storeDay();
+    }, RETRY_MIN_MS);
+    return function () {
+      clearInterval(timer);
+    };
+  }, []);
   return day;
 }
 function Shell({

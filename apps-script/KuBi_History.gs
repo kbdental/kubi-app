@@ -30,7 +30,7 @@ var TOKEN = 'kb-b5mdu6-vpa25g-fkxfcf';   // must match SHEETS_CONFIG.token in Ku
 // Bumped whenever this file changes in a way a deployment must pick up.
 // `ping` reports it, so "is the new version actually live" is answerable
 // without writing anything to the sheet.
-var SCRIPT_VERSION = 2;
+var SCRIPT_VERSION = 3;
 var SHEET_NAME = 'KuBi History';   // one row per finished day
 var DAY_SHEET_NAME = 'KuBi Day';   // the day in progress, so a refresh loses nothing
 
@@ -201,7 +201,11 @@ function historyRemove_(date) {
 // One row per date holding the day as JSON. History answers "what did that
 // day amount to"; this answers "what is happening today", so a browser
 // refresh at three in the afternoon does not lose the morning.
-var DAY_HEADERS = ['date', 'state', 'updatedAt'];
+// `rev` makes a write checkable: a client sends the revision it last read,
+// and a write built on a stale copy is REFUSED rather than silently winning.
+// `prevState` keeps the version before the last write, so one bad save does
+// not leave the day with no earlier copy to fall back to.
+var DAY_HEADERS = ['date', 'state', 'updatedAt', 'rev', 'prevState', 'updatedBy'];
 
 function daySheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -222,28 +226,66 @@ function dayGet_(date) {
   var sh = daySheet_();
   var at = findRow_(sh, String(date));
   if (!at) return { status: 'ok', record: null };
-  var raw = sh.getRange(at, 2).getValue();
+  var row = sh.getRange(at, 1, 1, DAY_HEADERS.length).getValues()[0];
   var state;
   try {
-    state = JSON.parse(raw);
+    state = JSON.parse(row[1]);
   } catch (e) {
-    // A corrupt row must not take the clinic down: report nothing stored.
-    return { status: 'ok', record: null };
+    // A corrupt row must not take the clinic down. Fall back to the copy
+    // from before the last write rather than reporting nothing at all —
+    // an older day is worth much more than no day.
+    try {
+      state = JSON.parse(row[4]);
+      return { status: 'ok', recovered: true,
+               record: { date: dateKey_(row[0]), state: state, rev: Number(row[3]) || 0 } };
+    } catch (e2) {
+      return { status: 'ok', record: null };
+    }
   }
-  return { status: 'ok', record: { date: dateKey_(sh.getRange(at, 1).getValue()), state: state } };
+  return { status: 'ok',
+           record: { date: dateKey_(row[0]), state: state, rev: Number(row[3]) || 0,
+                     updatedAt: row[2] || null, updatedBy: row[5] || null } };
 }
 
-function dayPut_(date, state) {
+/**
+ * Store the day, but only if the caller was working from the current
+ * revision. Otherwise somebody else has written since they read, and
+ * overwriting would throw their work away — so the current record is handed
+ * back for the caller to merge and try again.
+ *
+ * baseRev of null means "I have not read this day", which is only allowed
+ * when no row exists yet.
+ */
+function dayPut_(date, state, baseRev, by) {
   if (!date) return { status: 'error', message: 'date required' };
   var lock = LockService.getScriptLock();
   try { lock.waitLock(20000); } catch (e) { return { status: 'error', message: 'busy' }; }
   try {
     var sh = daySheet_();
-    var row = [String(date), JSON.stringify(state), new Date()];
     var at = findRow_(sh, String(date));
-    if (at) sh.getRange(at, 1, 1, DAY_HEADERS.length).setValues([row]);
-    else sh.appendRow(row);
-    return { status: 'ok', date: date, replaced: !!at };
+
+    if (!at) {
+      sh.appendRow([String(date), JSON.stringify(state), new Date(), 1, '', by || '']);
+      return { status: 'ok', date: date, rev: 1, replaced: false };
+    }
+
+    var existing = sh.getRange(at, 1, 1, DAY_HEADERS.length).getValues()[0];
+    var currentRev = Number(existing[3]) || 0;
+
+    if (baseRev === null || baseRev === undefined || Number(baseRev) !== currentRev) {
+      var theirs = null;
+      try { theirs = JSON.parse(existing[1]); } catch (e) { theirs = null; }
+      return { status: 'conflict', date: date, rev: currentRev,
+               record: { date: date, state: theirs, rev: currentRev },
+               message: 'the day has changed since you read it' };
+    }
+
+    sh.getRange(at, 1, 1, DAY_HEADERS.length).setValues([[
+      String(date), JSON.stringify(state), new Date(), currentRev + 1,
+      existing[1],                    // the copy this write replaces
+      by || '',
+    ]]);
+    return { status: 'ok', date: date, rev: currentRev + 1, replaced: true };
   } finally {
     lock.releaseLock();
   }
@@ -276,7 +318,7 @@ function doPost(e) {
 
     if (p.action === 'historyPut') return jsonOut_(historyPut_(body.snapshot));
     if (p.action === 'historyRemove') return jsonOut_(historyRemove_(body.date));
-    if (p.action === 'dayPut') return jsonOut_(dayPut_(body.date, body.state));
+    if (p.action === 'dayPut') return jsonOut_(dayPut_(body.date, body.state, body.baseRev, body.by));
     return jsonOut_({ status: 'error', message: 'unknown action' });
   } catch (err) {
     return jsonOut_({ status: 'error', message: String(err) });

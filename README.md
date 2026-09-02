@@ -13,7 +13,7 @@ React is bundled in.
 ```bash
 npm install
 npm run build     # compiles src/ -> KuBi.html
-npm test          # builds, then runs 288 journey checks + 7 bundle checks
+npm test          # builds, then runs 300 journey + 7 bundle + 20 Apps Script checks
 ```
 
 `KuBi.html` is generated. Edit `src/`, never the bundle.
@@ -303,6 +303,51 @@ train people to ignore the ones that are.
 
 **⚠ The quantities and minimums need the clinic's own figures.** They
 reproduce the states the app already showed; they are not a stock count.
+
+## Persistence: two terminals, one day
+
+A clinic runs on more than one screen. Both save the whole day, the day is
+one record, and the second save used to win — so the first person's work
+disappeared, and the append-only audit lost an entry it should never have
+lost.
+
+**Revisions.** Every stored day carries a `rev`. A client sends the revision
+it last read; a write built on a stale copy is **refused**, not accepted, and
+the current record is handed back.
+
+**Merging, not choosing.** `mergeDay()` merges the two versions field by
+field, by what each field means:
+
+| field | rule |
+|---|---|
+| ticks (readiness, closing, lab, closed cases) | union — a tick is work somebody did |
+| checklists | merged per step, so two people ticking different items keep both |
+| patient status | the later `statusAt` is what happened |
+| repairs | a fixed fault stays fixed |
+| sterilization packs | only ever move forward |
+| **audit** | **every entry from both sides**, de-duplicated, in order |
+
+**Retry.** A failed save backs off and retries rather than waiting for
+somebody to happen to tick something else. A quiet clinic must not be one
+that has silently stopped saving.
+
+**A previous copy.** Each write keeps the version it replaced in
+`prevState`. If the current cell is ever corrupt, `dayGet` recovers from it —
+an older day beats no day.
+
+### What this cannot do
+
+Presence cannot be told from deletion. If one terminal un-ticks something
+while another still has it ticked, **the tick survives**. Losing a tick makes
+work look undone and somebody redoes it: wasteful but safe. Tombstones would
+be the fix if it ever matters.
+
+### The Apps Script is tested now
+
+`test-appsscript.js` runs the real `.gs` against a fake spreadsheet — stale
+writes, conflicts, corrupt cells, header migration. It had no tests before,
+and was only ever checked by deploying it and poking the live endpoint, which
+cannot exercise two terminals racing.
 
 ## The V2 principle
 

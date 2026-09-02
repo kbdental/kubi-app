@@ -20,6 +20,7 @@ module.exports = [
   'src/nextAction.js',
   'src/mis.js',
   'src/dayStore.js',
+  'src/mergeDay.js',
   'src/sheetsSync.js',
   'src/history.js',
   'src/EmployeeMaster.jsx',

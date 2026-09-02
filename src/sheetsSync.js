@@ -144,6 +144,19 @@ window.KuBi.historySync = (function () {
           return { ok: true, rev: json.rev };
         });
     },
+
+    /** What copies exist for a date, newest first. */
+    dayBackups: function (date) {
+      return request({ action: 'dayBackups', extra: '&date=' + encodeURIComponent(date) })
+        .then(function (json) { return json ? json.backups || [] : null; });
+    },
+
+    /** One copy, by revision. */
+    dayBackupGet: function (date, rev) {
+      return request({ action: 'dayBackupGet',
+                       extra: '&date=' + encodeURIComponent(date) + '&rev=' + encodeURIComponent(rev) })
+        .then(function (json) { return json ? json.backup || null : null; });
+    },
   };
 })();
 

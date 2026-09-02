@@ -668,6 +668,23 @@
   .fu-state-attended, .fu-state-closed { color: var(--green); border-color: var(--green); }
   .fu-state-note { color: var(--ink-soft); font-size: 12px; }
 
+  .save-pill {
+    font-size: 11.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+    white-space: nowrap;
+  }
+  .save-ok { color: var(--ink-soft); }
+  .save-failing { color: var(--coral); background: rgba(193,80,46,0.10); font-weight: 700; }
+  .backup-card { margin-top: 16px; }
+  .backup-note { color: var(--green); }
+  .backup-list { list-style: none; margin: 12px 0 0; padding: 0; }
+  .backup-row {
+    display: grid; grid-template-columns: 68px 1fr auto; gap: 10px; align-items: center;
+    padding: 6px 0; border-bottom: 1px solid var(--line);
+  }
+  .backup-row:last-child { border-bottom: none; }
+  .backup-when, .backup-who { font-size: 12.5px; color: var(--ink-soft); }
+  @media (max-width: 600px) { .backup-row { grid-template-columns: 1fr auto; } }
+
   /* ---------- Case view ---------- */
   .case-view { padding: 20px; }
   .case-back { margin-bottom: 16px; }
@@ -850,7 +867,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 02 Sept 2026, 03:11 pm';
+  window.KuBi.BUILD_STAMP = 'Build: 02 Sept 2026, 03:20 pm';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -35149,6 +35166,62 @@ window.KuBi.STRINGS = {
     en: 'Sign out',
     hi: 'साइन आउट'
   },
+  'save.saved': {
+    en: 'Saved',
+    hi: 'सेव हो गया'
+  },
+  'save.saving': {
+    en: 'Saving',
+    hi: 'सेव हो रहा है'
+  },
+  'save.failing': {
+    en: 'NOT SAVING',
+    hi: 'सेव नहीं हो रहा'
+  },
+  'save.since': {
+    en: 'since',
+    hi: 'से'
+  },
+  'save.offlineWarn': {
+    en: 'Working, but nothing is reaching the sheet.',
+    hi: 'काम चल रहा है, पर शीट तक कुछ नहीं पहुंच रहा।'
+  },
+  'backup.title': {
+    en: 'Backups',
+    hi: 'बैकअप'
+  },
+  'backup.subtitle': {
+    en: 'Earlier copies of today, and a copy you can keep.',
+    hi: 'आज की पुरानी कॉपी, और एक कॉपी जो आप रख सकते हैं।'
+  },
+  'backup.download': {
+    en: 'Download a copy',
+    hi: 'एक कॉपी डाउनलोड करें'
+  },
+  'backup.none': {
+    en: 'No earlier copies yet.',
+    hi: 'अभी कोई पुरानी कॉपी नहीं है।'
+  },
+  'backup.restore': {
+    en: 'Restore',
+    hi: 'वापस लाएं'
+  },
+  'backup.restored': {
+    en: 'Restored',
+    hi: 'वापस आ गया'
+  },
+  'backup.savedBy': {
+    en: 'saved by',
+    hi: 'ने सेव किया'
+  },
+  'backup.confirmRestore': {
+    en: 'Replace today with this copy?',
+    hi: 'आज को इस कॉपी से बदलें?'
+  },
+  'backup.unreachable': {
+    en: 'Cannot reach the sheet.',
+    hi: 'शीट तक नहीं पहुंच पा रहे।'
+  },
   'empty.noModules': {
     en: 'Nothing here for you yet.',
     hi: 'आपके लिए अभी यहां कुछ नहीं है।'
@@ -40731,6 +40804,24 @@ window.KuBi.historySync = function () {
           rev: json.rev
         };
       });
+    },
+    /** What copies exist for a date, newest first. */
+    dayBackups: function (date) {
+      return request({
+        action: 'dayBackups',
+        extra: '&date=' + encodeURIComponent(date)
+      }).then(function (json) {
+        return json ? json.backups || [] : null;
+      });
+    },
+    /** One copy, by revision. */
+    dayBackupGet: function (date, rev) {
+      return request({
+        action: 'dayBackupGet',
+        extra: '&date=' + encodeURIComponent(date) + '&rev=' + encodeURIComponent(rev)
+      }).then(function (json) {
+        return json ? json.backup || null : null;
+      });
     }
   };
 }();
@@ -43563,11 +43654,28 @@ window.KuBi.Management = function Management({
   labReceived,
   audit,
   followUpProgress,
+  day,
+  currentUser,
   goTo
 }) {
   const t = window.KuBi.t;
   const TABS = ['owner', 'mis', 'people'];
   const [subtab, setSubtab] = React.useState(initialSubtab || 'owner');
+  // Hooks belong at the top of the component. These were briefly declared
+  // inside the conditionally-rendered backup block, which meant they
+  // vanished whenever another tab was open — React counts hooks per render
+  // and every screen in Management broke.
+  const [backups, setBackups] = React.useState(null);
+  const [backupNote, setBackupNote] = React.useState(null);
+  React.useEffect(function () {
+    if (!window.KuBi.historySync.isConfigured()) {
+      setBackups([]);
+      return;
+    }
+    window.KuBi.historySync.dayBackups(window.KuBi.operatingDate()).then(function (list) {
+      setBackups(list === null ? 'unreachable' : list);
+    });
+  }, []);
   React.useEffect(function () {
     if (initialSubtab) setSubtab(initialSubtab);
   }, [initialSubtab]);
@@ -43789,6 +43897,75 @@ window.KuBi.Management = function Management({
     })), log.length > recent.length ? /*#__PURE__*/React.createElement("p", {
       className: "module-sub"
     }, "+", log.length - recent.length, " ", t('audit.more', lang)) : null));
+  }() : null, subtab === 'owner' ? function () {
+    function downloadCopy() {
+      const date = window.KuBi.operatingDate();
+      const blob = new Blob([JSON.stringify({
+        kubi: 'day',
+        date: date,
+        savedAt: new Date().toISOString(),
+        savedBy: currentUser ? currentUser.name : null,
+        state: window.KuBi.snapshotDay(day)
+      }, null, 2)], {
+        type: 'application/json'
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'KuBi-' + date + '.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () {
+        URL.revokeObjectURL(url);
+      }, 1000);
+    }
+    function restore(rev) {
+      if (!window.confirm(t('backup.confirmRestore', lang))) return;
+      window.KuBi.historySync.dayBackupGet(window.KuBi.operatingDate(), rev).then(function (b) {
+        if (!b) {
+          setBackupNote(t('backup.unreachable', lang));
+          return;
+        }
+        window.KuBi.restoreDay(day, b.state);
+        setBackupNote(t('backup.restored', lang));
+      });
+    }
+    return /*#__PURE__*/React.createElement("div", {
+      className: "card backup-card"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "card-title"
+    }, t('backup.title', lang)), /*#__PURE__*/React.createElement("p", {
+      className: "module-sub"
+    }, t('backup.subtitle', lang)), /*#__PURE__*/React.createElement("button", {
+      className: "btn-primary today-btn",
+      onClick: downloadCopy
+    }, t('backup.download', lang)), backupNote ? /*#__PURE__*/React.createElement("p", {
+      className: "module-sub backup-note"
+    }, backupNote) : null, backups === 'unreachable' ? /*#__PURE__*/React.createElement("p", {
+      className: "module-sub"
+    }, t('backup.unreachable', lang)) : !backups || backups.length === 0 ? /*#__PURE__*/React.createElement("p", {
+      className: "module-sub"
+    }, t('backup.none', lang)) : /*#__PURE__*/React.createElement("ul", {
+      className: "backup-list"
+    }, backups.slice(0, 8).map(function (b) {
+      return /*#__PURE__*/React.createElement("li", {
+        key: b.rev,
+        className: "backup-row"
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "backup-when mono"
+      }, new Date(b.savedAt).toLocaleTimeString('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit'
+      })), /*#__PURE__*/React.createElement("span", {
+        className: "backup-who"
+      }, b.savedBy ? t('backup.savedBy', lang) + ' ' + b.savedBy : ''), /*#__PURE__*/React.createElement("button", {
+        className: "rowbtn",
+        onClick: function () {
+          restore(b.rev);
+        }
+      }, t('backup.restore', lang)));
+    })));
   }() : null, subtab === 'mis' ? /*#__PURE__*/React.createElement(window.KuBi.MIS, {
     lang: lang,
     appointments: appointments,
@@ -44025,7 +44202,14 @@ function useClinicDay() {
   const rev = React.useRef(null); // the revision this browser last saw
   const retryAt = React.useRef(0); // how long to wait after a failure
   const inFlight = React.useRef(false); // one save at a time, always
-
+  // Staff must be able to SEE that saving is failing. A silent retry is
+  // how a clinic works all afternoon and finds out at closing that
+  // nothing was stored.
+  const [saveState, setSaveState] = React.useState({
+    status: 'idle',
+    at: null,
+    since: null
+  });
   React.useEffect(function () {
     if (!window.KuBi.historySync.isConfigured()) return;
     let cancelled = false;
@@ -44068,12 +44252,22 @@ function useClinicDay() {
   function storeDay() {
     if (inFlight.current) return Promise.resolve();
     inFlight.current = true;
+    setSaveState(function (prev) {
+      return Object.assign({}, prev, {
+        status: 'saving'
+      });
+    });
     const date = window.KuBi.operatingDate();
     const mine = window.KuBi.snapshotDay(day);
     return window.KuBi.historySync.daySave(date, mine, rev.current, user.name).then(function (res) {
       if (res.ok) {
         rev.current = res.rev;
         retryAt.current = 0;
+        setSaveState({
+          status: 'saved',
+          at: new Date(),
+          since: null
+        });
         return;
       }
       if (res.conflict) {
@@ -44085,14 +44279,33 @@ function useClinicDay() {
           if (again.ok) {
             rev.current = again.rev;
             retryAt.current = 0;
+            setSaveState({
+              status: 'saved',
+              at: new Date(),
+              since: null
+            });
           } else {
-            retryAt.current = RETRY_MIN_MS;
-          } // try the whole thing again shortly
+            retryAt.current = RETRY_MIN_MS; // try the whole thing again shortly
+            setSaveState(function (prev) {
+              return {
+                status: 'failing',
+                at: prev.at,
+                since: prev.since || new Date()
+              };
+            });
+          }
         });
       }
 
-      // Could not be stored. Back off, but keep trying.
+      // Could not be stored. Back off, keep trying, and SAY SO.
       retryAt.current = Math.min(retryAt.current ? retryAt.current * 2 : RETRY_MIN_MS, RETRY_MAX_MS);
+      setSaveState(function (prev) {
+        return {
+          status: 'failing',
+          at: prev.at,
+          since: prev.since || new Date()
+        };
+      });
     }).then(function () {
       inFlight.current = false;
     }).catch(function () {
@@ -44112,6 +44325,24 @@ function useClinicDay() {
     };
   }, watched);
 
+  // Closing the browser with work that never reached the sheet is exactly
+  // how a day gets lost. The browser will only show its own generic
+  // wording, but it is a stop sign, and it is better than silence.
+  React.useEffect(function () {
+    function warn(e) {
+      if (!window.KuBi.historySync.isConfigured()) return;
+      if (retryAt.current > 0 || inFlight.current) {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    }
+    window.addEventListener('beforeunload', warn);
+    return function () {
+      window.removeEventListener('beforeunload', warn);
+    };
+  }, []);
+
   // A failed save is not left waiting for somebody to tick something else.
   React.useEffect(function () {
     if (!window.KuBi.historySync.isConfigured()) return;
@@ -44122,6 +44353,9 @@ function useClinicDay() {
       clearInterval(timer);
     };
   }, []);
+
+  // The day, plus whether it is actually reaching the sheet.
+  day.saveState = saveState;
   return day;
 }
 function Shell({
@@ -44169,6 +44403,9 @@ function Shell({
     followUpProgress,
     setFollowUpProgress
   } = day;
+  const saveState = day.saveState || {
+    status: 'idle'
+  };
   const ActiveComponent = activeArea ? AREAS[activeArea].component() : null;
 
   // Keep a live snapshot of the day so nothing is lost if the clinic is
@@ -44539,6 +44776,8 @@ function Shell({
         closingChecked: closingChecked,
         repairs: repairs,
         audit: audit,
+        day: day,
+        currentUser: user,
         labReceived: labReceived,
         initialSubtab: navTarget.subtab,
         goTo: goTo
@@ -44592,7 +44831,18 @@ function Shell({
     className: 'clinic-status-pill ' + (clinicStatus.open ? 'clinic-status-open' : 'clinic-status-closed')
   }, /*#__PURE__*/React.createElement("span", {
     className: 'status-dot ' + (clinicStatus.open ? 'status-dot-open' : 'status-dot-closed')
-  }), t(clinicStatus.open ? 'today.openLabel' : 'today.closedLabel', lang)), /*#__PURE__*/React.createElement(LangToggle, {
+  }), t(clinicStatus.open ? 'today.openLabel' : 'today.closedLabel', lang)), saveState.status === 'failing' ? /*#__PURE__*/React.createElement("span", {
+    className: "save-pill save-failing",
+    title: t('save.offlineWarn', lang)
+  }, "\uD83D\uDD34 ", t('save.failing', lang), saveState.since ? ' · ' + t('save.since', lang) + ' ' + new Date(saveState.since).toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit'
+  }) : '') : saveState.status === 'saved' && saveState.at ? /*#__PURE__*/React.createElement("span", {
+    className: "save-pill save-ok"
+  }, t('save.saved', lang), " ", new Date(saveState.at).toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit'
+  })) : null, /*#__PURE__*/React.createElement(LangToggle, {
     lang: lang,
     setLang: setLang
   }), /*#__PURE__*/React.createElement("button", {

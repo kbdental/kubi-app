@@ -186,6 +186,45 @@ check('a header row somebody has renamed is left alone',
       renamed.getRange(1, 3, 1, 1).getValue() === 'somebody renamed this',
       'guessing would mislabel data already there');
 
+// ---- backups: winding a day back ----
+const B = '2026-09-03';
+post('dayPut', { date: B, state: { ticks: 1, note: 'morning' }, baseRev: null, by: 'Ramesh Yadav' });
+const firstBackups = get('dayBackups', { date: B }).backups;
+check('a copy is taken when a day is first written',
+      firstBackups.length === 1 && firstBackups[0].savedBy === 'Ramesh Yadav',
+      firstBackups.length + ' copy');
+
+// A second write moments later must NOT take another copy: the app saves a
+// couple of seconds after every tick, and one row per tick is unreadable.
+post('dayPut', { date: B, state: { ticks: 2, note: 'later' }, baseRev: 1, by: 'Priya Sharma' });
+check('copies are periodic, not one per save',
+      get('dayBackups', { date: B }).backups.length === 1,
+      'still ' + get('dayBackups', { date: B }).backups.length);
+
+// Force the clock back so the next write is eligible.
+const bSheet = SpreadsheetApp._sheets[BACKUP_SHEET_NAME];
+// Age every existing copy for this date, not just the first row: the check
+// looks at the LAST one, and there may be rows for other dates in between.
+bSheet._cells.forEach(function (row, idx) {
+  if (idx > 0 && String(row[0]) === B) row[2] = new Date(Date.now() - (BACKUP_EVERY_MIN + 1) * 60000);
+});
+post('dayPut', { date: B, state: { ticks: 3, note: 'much later' }, baseRev: 2, by: 'Nisha Verma' });
+const twoBackups = get('dayBackups', { date: B }).backups;
+check('a copy is taken once enough time has passed', twoBackups.length === 2, twoBackups.length + ' copies');
+check('copies are listed newest first',
+      new Date(twoBackups[0].savedAt).getTime() >= new Date(twoBackups[1].savedAt).getTime());
+
+const oldCopy = get('dayBackupGet', { date: B, rev: 1 }).backup;
+check('an earlier copy can be fetched by revision',
+      oldCopy && oldCopy.state.note === 'morning', oldCopy && oldCopy.state.note);
+check('fetching a copy does not change the live day',
+      get('dayGet', { date: B }).record.state.note === 'much later');
+
+check('a day with no copies answers cleanly',
+      get('dayBackups', { date: '2020-01-01' }).backups.length === 0);
+check('asking for a copy that is not there answers cleanly',
+      get('dayBackupGet', { date: '2020-01-01', rev: 9 }).backup === null);
+
 // ---- summary ----
 const failed = results.filter(r => !r.pass);
 console.log('\n================================');

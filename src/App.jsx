@@ -140,6 +140,10 @@ function useClinicDay() {
   const rev = React.useRef(null);          // the revision this browser last saw
   const retryAt = React.useRef(0);         // how long to wait after a failure
   const inFlight = React.useRef(false);    // one save at a time, always
+  // Staff must be able to SEE that saving is failing. A silent retry is
+  // how a clinic works all afternoon and finds out at closing that
+  // nothing was stored.
+  const [saveState, setSaveState] = React.useState({ status: 'idle', at: null, since: null });
 
   React.useEffect(function () {
     if (!window.KuBi.historySync.isConfigured()) return;
@@ -182,6 +186,7 @@ function useClinicDay() {
   function storeDay() {
     if (inFlight.current) return Promise.resolve();
     inFlight.current = true;
+    setSaveState(function (prev) { return Object.assign({}, prev, { status: 'saving' }); });
     const date = window.KuBi.operatingDate();
     const mine = window.KuBi.snapshotDay(day);
 
@@ -190,6 +195,7 @@ function useClinicDay() {
         if (res.ok) {
           rev.current = res.rev;
           retryAt.current = 0;
+          setSaveState({ status: 'saved', at: new Date(), since: null });
           return;
         }
 
@@ -200,14 +206,24 @@ function useClinicDay() {
           rev.current = res.rev;
           return window.KuBi.historySync.daySave(date, merged, res.rev, user.name)
             .then(function (again) {
-              if (again.ok) { rev.current = again.rev; retryAt.current = 0; }
-              else { retryAt.current = RETRY_MIN_MS; }   // try the whole thing again shortly
+              if (again.ok) {
+                rev.current = again.rev; retryAt.current = 0;
+                setSaveState({ status: 'saved', at: new Date(), since: null });
+              } else {
+                retryAt.current = RETRY_MIN_MS;          // try the whole thing again shortly
+                setSaveState(function (prev) {
+                  return { status: 'failing', at: prev.at, since: prev.since || new Date() };
+                });
+              }
             });
         }
 
-        // Could not be stored. Back off, but keep trying.
+        // Could not be stored. Back off, keep trying, and SAY SO.
         retryAt.current = Math.min(
           retryAt.current ? retryAt.current * 2 : RETRY_MIN_MS, RETRY_MAX_MS);
+        setSaveState(function (prev) {
+          return { status: 'failing', at: prev.at, since: prev.since || new Date() };
+        });
       })
       .then(function () { inFlight.current = false; })
       .catch(function () { inFlight.current = false; retryAt.current = RETRY_MIN_MS; });
@@ -221,6 +237,22 @@ function useClinicDay() {
     return function () { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, watched);
 
+  // Closing the browser with work that never reached the sheet is exactly
+  // how a day gets lost. The browser will only show its own generic
+  // wording, but it is a stop sign, and it is better than silence.
+  React.useEffect(function () {
+    function warn(e) {
+      if (!window.KuBi.historySync.isConfigured()) return;
+      if (retryAt.current > 0 || inFlight.current) {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    }
+    window.addEventListener('beforeunload', warn);
+    return function () { window.removeEventListener('beforeunload', warn); };
+  }, []);
+
   // A failed save is not left waiting for somebody to tick something else.
   React.useEffect(function () {
     if (!window.KuBi.historySync.isConfigured()) return;
@@ -230,6 +262,8 @@ function useClinicDay() {
     return function () { clearInterval(timer); };
   }, []);
 
+  // The day, plus whether it is actually reaching the sheet.
+  day.saveState = saveState;
   return day;
 }
 
@@ -249,6 +283,7 @@ function Shell({ user, onLogout, lang, setLang, day }) {
     audit, setAudit,
     followUpProgress, setFollowUpProgress,
   } = day;
+  const saveState = day.saveState || { status: 'idle' };
 
   const ActiveComponent = activeArea ? AREAS[activeArea].component() : null;
 
@@ -585,6 +620,8 @@ function Shell({ user, onLogout, lang, setLang, day }) {
           closingChecked={closingChecked}
           repairs={repairs}
           audit={audit}
+          day={day}
+          currentUser={user}
           labReceived={labReceived}
           initialSubtab={navTarget.subtab}
           goTo={goTo}
@@ -631,6 +668,19 @@ function Shell({ user, onLogout, lang, setLang, day }) {
               <span className={'status-dot ' + (clinicStatus.open ? 'status-dot-open' : 'status-dot-closed')} />
               {t(clinicStatus.open ? 'today.openLabel' : 'today.closedLabel', lang)}
             </span>
+            {/* Whether the day is actually reaching the sheet. Silent
+                retrying is how an afternoon's work disappears. */}
+            {saveState.status === 'failing' ? (
+              <span className="save-pill save-failing" title={t('save.offlineWarn', lang)}>
+                🔴 {t('save.failing', lang)}
+                {saveState.since ? ' · ' + t('save.since', lang) + ' ' +
+                  new Date(saveState.since).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''}
+              </span>
+            ) : saveState.status === 'saved' && saveState.at ? (
+              <span className="save-pill save-ok">
+                {t('save.saved', lang)} {new Date(saveState.at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            ) : null}
             <LangToggle lang={lang} setLang={setLang} />
             <button className="btn-ghost" onClick={onLogout}>{t('topbar.signOut', lang)}</button>
           </div>

@@ -13,7 +13,7 @@ React is bundled in.
 ```bash
 npm install
 npm run build     # compiles src/ -> KuBi.html
-npm test          # builds, then runs 315 journey + 7 bundle + 20 Apps Script checks
+npm test          # builds, then runs 315 journey + 7 bundle + 28 Apps Script checks
 ```
 
 `KuBi.html` is generated. Edit `src/`, never the bundle.
@@ -361,6 +361,33 @@ that has silently stopped saving.
 **A previous copy.** Each write keeps the version it replaced in
 `prevState`. If the current cell is ever corrupt, `dayGet` recovers from it —
 an older day beats no day.
+
+### Backup and recovery
+
+Four failures, and what answers each:
+
+| failure | what saves the day |
+|---|---|
+| tab closed, computer dies | the day is already in the sheet |
+| two terminals racing | revisions and merge |
+| the sheet's cell is corrupt | `prevState`, the copy before the last write |
+| **nobody notices saving is failing** | **the top bar says NOT SAVING, since when** |
+| **wanting today back as it stood at eleven** | **periodic copies, restorable from Management** |
+| **the sheet or the account is lost** | **Download a copy — a file the clinic holds** |
+
+The save indicator matters more than it looks. A silent retry is how a
+clinic works all afternoon and finds out at closing that nothing was
+stored. Closing the browser with work that has not reached the sheet now
+raises the browser's own warning as well.
+
+Copies are periodic, not one per save — the app writes a couple of seconds
+after every tick, and a row per tick would be unreadable. `BACKUP_EVERY_MIN`
+governs it, `BACKUP_KEEP` caps how many are kept per day.
+
+**Still true:** everything lives in one spreadsheet. The downloadable copy
+is the only thing that survives that spreadsheet being deleted, and it is
+manual. A second automatic destination is the honest remaining gap, and it
+belongs with the boundary work in SECURITY.md.
 
 ### What this cannot do
 

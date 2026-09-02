@@ -30,9 +30,10 @@ var TOKEN = 'kb-b5mdu6-vpa25g-fkxfcf';   // must match SHEETS_CONFIG.token in Ku
 // Bumped whenever this file changes in a way a deployment must pick up.
 // `ping` reports it, so "is the new version actually live" is answerable
 // without writing anything to the sheet.
-var SCRIPT_VERSION = 3;
+var SCRIPT_VERSION = 4;
 var SHEET_NAME = 'KuBi History';   // one row per finished day
 var DAY_SHEET_NAME = 'KuBi Day';   // the day in progress, so a refresh loses nothing
+var BACKUP_SHEET_NAME = 'KuBi Day Backup';   // periodic copies, so a day can be wound back
 
 // Column order is the contract with buildSnapshot() in src/history.js.
 // Append new fields at the END so existing rows keep their meaning.
@@ -266,6 +267,7 @@ function dayPut_(date, state, baseRev, by) {
 
     if (!at) {
       sh.appendRow([String(date), JSON.stringify(state), new Date(), 1, '', by || '']);
+      backupTake_(date, 1, state, by);
       return { status: 'ok', date: date, rev: 1, replaced: false };
     }
 
@@ -285,10 +287,93 @@ function dayPut_(date, state, baseRev, by) {
       existing[1],                    // the copy this write replaces
       by || '',
     ]]);
-    return { status: 'ok', date: date, rev: currentRev + 1, replaced: true };
+    var tookCopy = backupTake_(date, currentRev + 1, state, by);
+    return { status: 'ok', date: date, rev: currentRev + 1, replaced: true, backedUp: tookCopy };
   } finally {
     lock.releaseLock();
   }
+}
+
+// ── backups ──────────────────────────────────────────────────────────
+// prevState recovers the ONE copy before the last write, which handles a
+// corrupt cell. It does not let anybody wind a day back to how it stood at
+// eleven o'clock. These rows do: a copy every so often, append-only, never
+// overwritten.
+//
+// Not one per save — the app saves a couple of seconds after every tick,
+// which would be hundreds of rows a day and nothing anybody could read.
+var BACKUP_HEADERS = ['date', 'rev', 'savedAt', 'savedBy', 'state'];
+var BACKUP_EVERY_MIN = 10;
+var BACKUP_KEEP = 40;              // per date, oldest dropped beyond this
+
+function backupSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(BACKUP_SHEET_NAME);
+  if (!sh) {
+    sh = ss.insertSheet(BACKUP_SHEET_NAME);
+    sh.appendRow(BACKUP_HEADERS);
+    sh.setFrozenRows(1);
+    sh.getRange('A:A').setNumberFormat('@');
+    sh.getRange('E:E').setNumberFormat('@');
+  }
+  ensureHeaders_(sh, BACKUP_HEADERS);
+  return sh;
+}
+
+/** Rows for one date, oldest first, as [rowNumber, date, rev, savedAt, savedBy]. */
+function backupRowsFor_(sh, date) {
+  var last = sh.getLastRow();
+  if (last < 2) return [];
+  var values = sh.getRange(2, 1, last - 1, BACKUP_HEADERS.length).getValues();
+  var out = [];
+  for (var i = 0; i < values.length; i++) {
+    if (dateKey_(values[i][0]) === date) out.push({ row: i + 2, v: values[i] });
+  }
+  return out;
+}
+
+function backupTake_(date, rev, state, by) {
+  var sh = backupSheet_();
+  var mine = backupRowsFor_(sh, date);
+
+  // Only every so often. A day does not need a copy every two seconds.
+  if (mine.length) {
+    var lastAt = new Date(mine[mine.length - 1].v[2]).getTime();
+    if (!isNaN(lastAt) && (Date.now() - lastAt) < BACKUP_EVERY_MIN * 60 * 1000) return false;
+  }
+
+  sh.appendRow([String(date), rev, new Date(), by || '', JSON.stringify(state)]);
+
+  // Keep the most recent, drop the oldest. Deleting from the bottom up so
+  // the row numbers underneath do not shift as we go.
+  mine = backupRowsFor_(sh, date);
+  if (mine.length > BACKUP_KEEP) {
+    var excess = mine.slice(0, mine.length - BACKUP_KEEP);
+    for (var k = excess.length - 1; k >= 0; k--) sh.deleteRow(excess[k].row);
+  }
+  return true;
+}
+
+/** What copies exist for a date — without the states, which are large. */
+function dayBackups_(date) {
+  if (!date) return { status: 'error', message: 'date required' };
+  var rows = backupRowsFor_(backupSheet_(), String(date));
+  return { status: 'ok', date: date, backups: rows.map(function (r) {
+    return { rev: Number(r.v[1]) || 0, savedAt: r.v[2], savedBy: r.v[3] };
+  }).reverse() };                                   // newest first
+}
+
+/** One copy, by revision. */
+function dayBackupGet_(date, rev) {
+  if (!date) return { status: 'error', message: 'date required' };
+  var rows = backupRowsFor_(backupSheet_(), String(date));
+  var want = rows.filter(function (r) { return String(r.v[1]) === String(rev); });
+  var pick = want.length ? want[want.length - 1] : rows[rows.length - 1];
+  if (!pick) return { status: 'ok', backup: null };
+  var state;
+  try { state = JSON.parse(pick.v[4]); } catch (e) { return { status: 'ok', backup: null }; }
+  return { status: 'ok', backup: { date: date, rev: Number(pick.v[1]) || 0,
+                                   savedAt: pick.v[2], savedBy: pick.v[3], state: state } };
 }
 
 // ── entry points ─────────────────────────────────────────────────────
@@ -300,6 +385,8 @@ function doGet(e) {
     if (!authed_(p.token)) return jsonOut_({ status: 'error', message: 'unauthorized' });
     if (p.action === 'historyAll') return jsonOut_(historyAll_());
     if (p.action === 'dayGet') return jsonOut_(dayGet_(p.date));
+    if (p.action === 'dayBackups') return jsonOut_(dayBackups_(p.date));
+    if (p.action === 'dayBackupGet') return jsonOut_(dayBackupGet_(p.date, p.rev));
     return jsonOut_({ status: 'error', message: 'unknown action' });
   } catch (err) {
     return jsonOut_({ status: 'error', message: String(err) });
@@ -329,5 +416,6 @@ function doPost(e) {
 function setup() {
   sheet_();
   daySheet_();
+  backupSheet_();
   Logger.log('Ready. Days on file: ' + historyAll_().rows.length);
 }

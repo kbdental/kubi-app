@@ -15,10 +15,23 @@ function pick(field, lang) {
   return field[lang] || field.en;
 }
 
-window.KuBi.Management = function Management({ lang, appointments, treatmentChecked, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, equipmentStatus, sterPacks, closingChecked, initialSubtab, repairs, labReceived, audit, followUpProgress, goTo }) {
+window.KuBi.Management = function Management({ lang, appointments, treatmentChecked, treatmentCheckedAfter, checked, clinicStatus, procedureState, closedCases, equipmentStatus, sterPacks, closingChecked, initialSubtab, repairs, labReceived, audit, followUpProgress, day, currentUser, goTo }) {
   const t = window.KuBi.t;
   const TABS = ['owner', 'mis', 'people'];
   const [subtab, setSubtab] = React.useState(initialSubtab || 'owner');
+  // Hooks belong at the top of the component. These were briefly declared
+  // inside the conditionally-rendered backup block, which meant they
+  // vanished whenever another tab was open — React counts hooks per render
+  // and every screen in Management broke.
+  const [backups, setBackups] = React.useState(null);
+  const [backupNote, setBackupNote] = React.useState(null);
+
+  React.useEffect(function () {
+    if (!window.KuBi.historySync.isConfigured()) { setBackups([]); return; }
+    window.KuBi.historySync.dayBackups(window.KuBi.operatingDate()).then(function (list) {
+      setBackups(list === null ? 'unreachable' : list);
+    });
+  }, []);
 
   React.useEffect(function () {
     if (initialSubtab) setSubtab(initialSubtab);
@@ -262,6 +275,71 @@ window.KuBi.Management = function Management({ lang, appointments, treatmentChec
                   <p className="module-sub">+{log.length - recent.length} {t('audit.more', lang)}</p>
                 ) : null}
               </React.Fragment>
+            )}
+          </div>
+        );
+      })() : null}
+
+      {/* Backups. Two different failures: winding today back to how it
+          stood earlier, and the sheet itself being lost. The first needs
+          the copies KuBi keeps; the second needs a file the clinic holds. */}
+      {subtab === 'owner' ? (function () {
+        function downloadCopy() {
+          const date = window.KuBi.operatingDate();
+          const blob = new Blob([JSON.stringify({
+            kubi: 'day', date: date, savedAt: new Date().toISOString(),
+            savedBy: currentUser ? currentUser.name : null,
+            state: window.KuBi.snapshotDay(day),
+          }, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'KuBi-' + date + '.json';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+        }
+
+        function restore(rev) {
+          if (!window.confirm(t('backup.confirmRestore', lang))) return;
+          window.KuBi.historySync.dayBackupGet(window.KuBi.operatingDate(), rev).then(function (b) {
+            if (!b) { setBackupNote(t('backup.unreachable', lang)); return; }
+            window.KuBi.restoreDay(day, b.state);
+            setBackupNote(t('backup.restored', lang));
+          });
+        }
+
+        return (
+          <div className="card backup-card">
+            <div className="card-title">{t('backup.title', lang)}</div>
+            <p className="module-sub">{t('backup.subtitle', lang)}</p>
+            <button className="btn-primary today-btn" onClick={downloadCopy}>
+              {t('backup.download', lang)}
+            </button>
+            {backupNote ? <p className="module-sub backup-note">{backupNote}</p> : null}
+            {backups === 'unreachable' ? (
+              <p className="module-sub">{t('backup.unreachable', lang)}</p>
+            ) : !backups || backups.length === 0 ? (
+              <p className="module-sub">{t('backup.none', lang)}</p>
+            ) : (
+              <ul className="backup-list">
+                {backups.slice(0, 8).map(function (b) {
+                  return (
+                    <li key={b.rev} className="backup-row">
+                      <span className="backup-when mono">
+                        {new Date(b.savedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      <span className="backup-who">
+                        {b.savedBy ? t('backup.savedBy', lang) + ' ' + b.savedBy : ''}
+                      </span>
+                      <button className="rowbtn" onClick={function () { restore(b.rev); }}>
+                        {t('backup.restore', lang)}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </div>
         );

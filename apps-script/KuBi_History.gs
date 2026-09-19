@@ -30,7 +30,7 @@ var TOKEN = 'kb-b5mdu6-vpa25g-fkxfcf';   // must match SHEETS_CONFIG.token in Ku
 // Bumped whenever this file changes in a way a deployment must pick up.
 // `ping` reports it, so "is the new version actually live" is answerable
 // without writing anything to the sheet.
-var SCRIPT_VERSION = 5;
+var SCRIPT_VERSION = 6;
 var SHEET_NAME = 'KuBi History';   // one row per finished day
 var DAY_SHEET_NAME = 'KuBi Day';   // the day in progress, so a refresh loses nothing
 var BACKUP_SHEET_NAME = 'KuBi Day Backup';   // periodic copies, so a day can be wound back
@@ -461,8 +461,14 @@ function doGet(e) {
   try {
     var p = (e && e.parameter) || {};
     if (p.action === 'ping') return jsonOut_({ status: 'ok', app: 'KuBi History',
-                                               version: SCRIPT_VERSION, headers: HEADERS.length });
+                                               version: SCRIPT_VERSION, headers: HEADERS.length,
+                                               // 0 = KuBi_Gateway.gs not added to the project yet
+                                               gateway: typeof GATEWAY_VERSION === 'number' ? GATEWAY_VERSION : 0 });
     if (!authed_(p.token)) return jsonOut_({ status: 'error', message: 'unauthorized' });
+    if (typeof gatewayRoute_ === 'function') {
+      var gg = gatewayRoute_(p.action, p, null);
+      if (gg) return jsonOut_(gg);
+    }
     if (p.action === 'historyAll') return jsonOut_(historyAll_());
     if (p.action === 'dayGet') return jsonOut_(dayGet_(p.date));
     if (p.action === 'dayBackups') return jsonOut_(dayBackups_(p.date));
@@ -484,6 +490,10 @@ function doPost(e) {
     var body = {};
     if (e && e.postData && e.postData.contents) body = JSON.parse(e.postData.contents);
 
+    if (typeof gatewayRoute_ === 'function') {
+      var gp = gatewayRoute_(p.action, p, body);
+      if (gp) return jsonOut_(gp);
+    }
     if (p.action === 'historyPut') return jsonOut_(historyPut_(body.snapshot));
     if (p.action === 'historyRemove') return jsonOut_(historyRemove_(body.date));
     if (p.action === 'dayPut') return jsonOut_(dayPut_(body.date, body.state, body.baseRev, body.by));

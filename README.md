@@ -553,6 +553,48 @@ sequences, which silently corrupts React's source (it contains
 fault — the journey test compiles `src/` directly and cannot see it.
 Keep both in `npm test`.
 
+## Connecting to the Management Suite and the Clinical Suite
+
+KuBi does not keep its own copy of the clinic. Two apps already hold it:
+
+| KuBi needs | owned by | tabs / actions read |
+|---|---|---|
+| staff, roles | Management Suite | `Staff`, `RoleEmployees` |
+| attendance, leave | Management Suite | `Attendance`, `LeaveRequests` |
+| role task ticks | Management Suite | `TaskCompletions` |
+| stock, equipment, autoclave loads | Management Suite (inventory sheet) | `InventoryItems`, `InstrumentRegister`, `SterilisationLoads` |
+| appointments and their status | Clinical Suite | `getAppointments` |
+| cases and stages | Clinical Suite | `getCaseState` |
+| follow-ups, recalls, missed | Clinical Suite | `getFollowUps` |
+| doctors, chairs | Clinical Suite | `getDoctorsList`, `getChairsList` |
+
+`apps-script/KuBi_Gateway.gs` sits in KuBi's own Apps Script project and
+reads both. Decisions it is built on (19 Sep 2026, with the owner):
+
+- **Connect, don't merge.** Both apps are live; each fact keeps one owner.
+- **Read-only.** Only `getBatch` goes to the Management Suite and only
+  `get*` (plus its staff login) to the Clinical Suite — asserted in
+  `test-gateway.js` from the requests actually sent.
+- **Front desk keeps using the Clinical Suite** for check-in → in chair →
+  done. KuBi reads the status; it does not set it.
+- **Sign-in uses the Management Suite PIN**, checked on the server with the
+  same rule as `kbdcRolePin` (a person's own PIN, else the role's). No PIN
+  ever reaches KuBi.html. Five wrong tries lock the name for a minute.
+- **Nothing raw goes out.** Every row is rebuilt from a fixed field list, so
+  a column added to either app later (salary, phone) cannot start leaking.
+  Patient phone numbers and check-in locations stay where they are.
+- **One app down is reported, not hidden.** Each source says whether it
+  answered, so KuBi can say "appointments unavailable" rather than show an
+  empty day.
+
+⚠ The designation → KuBi role table (`KUBI_ROLE_FOR`) decides who sees
+which screens and needs the owner's sign-off.
+
+Still to come: KuBi screens reading this feed instead of the demo data, and
+KuBi checklist ticks appearing in the Management Suite's task management
+(the one write, into `TaskCompletions` only — its save merges by row id, so
+it cannot wipe existing ticks).
+
 ## History and Google Sheets
 
 `history.js` keeps daily snapshots in memory and, when a sheet is

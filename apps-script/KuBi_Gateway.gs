@@ -33,7 +33,7 @@
  * Then Deploy → Manage deployments → ✏️ → New version. The URL stays the same.
  */
 
-var GATEWAY_VERSION = 1;
+var GATEWAY_VERSION = 2;
 
 var GATEWAY_DEFAULTS = {
   MGMT_URL: 'https://script.google.com/macros/s/AKfycbxfxWxPM4kk4Fa242Ewj2T9ktPsn3irBZjAxhWHCaEZkA0CG1ULBZED7PZWVD22cyDO/exec',
@@ -147,14 +147,36 @@ function gwFetch_(url, opts) {
   }
 }
 
-function gwCacheGet_(key) {
-  try { var v = CacheService.getScriptCache().get(key); return v ? JSON.parse(v) : null; }
-  catch (e) { return null; }
+// How long each part is reused. Stock and equipment change slowly and are
+// the biggest; appointments and attendance move all morning.
+var GW_TTL = { management: 60, inventory: 600, clinical: GATEWAY_CACHE_SEC, followUps: 600, lists: 3600 };
+
+// The cache holds at most 100 KB per entry, and the stock list alone is
+// bigger than that. So a value is stored in pieces, with a count.
+var GW_PIECE = 30000;               // characters; up to 3 bytes each against a 100 KB limit
+function gwBigGet_(key) {
+  try {
+    var c = CacheService.getScriptCache();
+    var n = Number(c.get(key + '#n') || 0);
+    if (!n) return null;
+    var keys = [];
+    for (var i = 0; i < n; i++) keys.push(key + '#' + i);
+    var got = c.getAll(keys), s = '';
+    for (var j = 0; j < n; j++) { if (got[keys[j]] == null) return null; s += got[keys[j]]; }
+    return JSON.parse(s);
+  } catch (e) { return null; }
 }
-function gwCachePut_(key, obj, sec) {
-  // The cache refuses values over 100 KB. Too big is simply not cached.
-  try { var s = JSON.stringify(obj); if (s.length < 95000) CacheService.getScriptCache().put(key, s, sec); }
-  catch (e) { /* caching is an optimisation, never a failure */ }
+function gwBigPut_(key, obj, sec) {
+  try {
+    var s = JSON.stringify(obj), pieces = {}, n = 0;
+    for (var i = 0; i < s.length; i += GW_PIECE) pieces[key + '#' + (n++)] = s.slice(i, i + GW_PIECE);
+    var c = CacheService.getScriptCache();
+    c.putAll(pieces, sec);
+    c.put(key + '#n', String(n), sec);          // the count last: a half-written value is never read
+  } catch (e) { /* caching is an optimisation, never a failure */ }
+}
+function gwBigRemove_(key) {
+  try { CacheService.getScriptCache().remove(key + '#n'); } catch (e) {}
 }
 
 // ── Management Suite ──────────────────────────────────────────────────
@@ -221,7 +243,8 @@ function shapeStaff_(rows, roleEmp) {
   (roleEmp || []).forEach(function (e) {
     var n = gwNorm_(e.name);
     if (!n || !e.roleCode) return;
-    (byName[n] = byName[n] || []).push(gwStr_(e.roleCode));
+    var list = (byName[n] = byName[n] || []);
+    if (list.indexOf(gwStr_(e.roleCode)) === -1) list.push(gwStr_(e.roleCode));
   });
   return (rows || []).filter(function (s) { return gwStr_(s.name); }).map(function (s) {
     var n = gwNorm_(s.name);
@@ -364,85 +387,107 @@ function shapeCase_(c) {
  */
 function gatewayFeed_(date) {
   date = gwDate_(date) || gwDate_(new Date());
-  var cached = gwCacheGet_('gw_feed_' + date);
-  if (cached) { cached.cached = true; return cached; }
+  var out = { status: 'ok', date: date, gatewayVersion: GATEWAY_VERSION, sources: {} };
 
-  var out = { status: 'ok', date: date, gatewayVersion: GATEWAY_VERSION, sources: {},
-              staff: [], attendance: [], leave: [], tasksDone: [],
-              inventory: [], equipment: [], sterilisation: [],
-              appointments: [], upcoming: [], cases: {}, followUps: [], recall: [], missed: [],
-              doctors: [], chairs: [] };
-
-  var m = mgmtRead_(gwProp_('MGMT_URL'),
-    ['Staff', 'RoleEmployees', 'Attendance', 'LeaveRequests', 'TaskCompletions']);
-  if (m.error) out.sources.management = { ok: false, error: m.error };
-  else {
-    out.staff = shapeStaff_(m.data.Staff, m.data.RoleEmployees);
-    out.attendance = shapeAttendance_(m.data.Attendance, date);
-    out.leave = shapeLeave_(m.data.LeaveRequests, date);
-    out.tasksDone = shapeTasks_(m.data.TaskCompletions, date);
-    out.sources.management = { ok: true };
+  // Each part is fetched, cached and reported on its own. A slow or broken
+  // part never costs the others, and nothing that failed is silently
+  // replaced by an empty list: `sources` names every part and whether it
+  // answered.
+  function part(name, key, sec, build) {
+    var cached = gwBigGet_(key);
+    var v = cached || build();
+    if (v.error) { out.sources[name] = { ok: false, error: v.error }; return; }
+    if (!cached) gwBigPut_(key, v, sec);
+    out.sources[name] = { ok: true, cached: !!cached };
+    Object.keys(v).forEach(function (k) { out[k] = v[k]; });
   }
 
-  var inv = mgmtRead_(gwProp_('MGMT_INV_URL'), ['InventoryItems', 'InstrumentRegister', 'SterilisationLoads']);
-  if (inv.error) out.sources.inventory = { ok: false, error: inv.error };
-  else {
-    out.inventory = shapeInventory_(inv.data.InventoryItems);
-    out.equipment = shapeEquipment_(inv.data.InstrumentRegister);
-    out.sterilisation = shapeLoads_(inv.data.SterilisationLoads, date);
-    out.sources.inventory = { ok: true };
-  }
+  part('management', 'gw_m_' + date, GW_TTL.management, function () {
+    var m = mgmtRead_(gwProp_('MGMT_URL'),
+      ['Staff', 'RoleEmployees', 'Attendance', 'LeaveRequests', 'TaskCompletions']);
+    if (m.error) return m;
+    return { staff: shapeStaff_(m.data.Staff, m.data.RoleEmployees),
+             attendance: shapeAttendance_(m.data.Attendance, date),
+             leave: shapeLeave_(m.data.LeaveRequests, date),
+             tasksDone: shapeTasks_(m.data.TaskCompletions, date) };
+  });
 
-  var ap = clinicalRead_('getAppointments', { fromDate: date, toDate: gwAddDays_(date, 7) });
-  if (ap.error) out.sources.clinical = { ok: false, error: ap.error };
-  else {
+  part('inventory', 'gw_i_' + date, GW_TTL.inventory, function () {
+    var inv = mgmtRead_(gwProp_('MGMT_INV_URL'), ['InventoryItems', 'InstrumentRegister', 'SterilisationLoads']);
+    if (inv.error) return inv;
+    return { inventory: shapeInventory_(inv.data.InventoryItems),
+             equipment: shapeEquipment_(inv.data.InstrumentRegister),
+             sterilisation: shapeLoads_(inv.data.SterilisationLoads, date) };
+  });
+
+  part('clinical', 'gw_c_' + date, GW_TTL.clinical, function () {
+    var ap = clinicalRead_('getAppointments', { fromDate: date, toDate: gwAddDays_(date, 7) });
+    if (ap.error) return ap;
     var all = shapeAppointments_(ap.json.appointments);
-    out.appointments = all.filter(function (a) { return a.date === date; });
+    var v = { appointments: all.filter(function (a) { return a.date === date; }), cases: {}, casesMissing: [] };
     // The week ahead: for "is the next visit booked" and for what stock
     // the coming days will use. Status is irrelevant there.
-    out.upcoming = all.filter(function (a) { return a.date > date; }).map(function (a) {
+    v.upcoming = all.filter(function (a) { return a.date > date; }).map(function (a) {
       return { date: a.date, patient: a.patient, procedureType: a.procedureType, caseId: a.caseId };
     });
-    out.sources.clinical = { ok: true };
-
-    // Cases for today's patients only — one call each, so keep it to the
-    // ones on today's list.
+    // Cases for today's patients only (one call each). A case that could
+    // not be read is named rather than quietly left out.
     var seen = {};
-    out.appointments.forEach(function (a) {
+    v.appointments.forEach(function (a) {
       if (!a.caseId || seen[a.caseId]) return;
       seen[a.caseId] = true;
       var c = clinicalRead_('getCaseState', { caseId: a.caseId });
-      if (!c.error) out.cases[a.caseId] = shapeCase_(c.json);
+      if (c.error) v.casesMissing.push(a.caseId);
+      else v.cases[a.caseId] = shapeCase_(c.json);
     });
+    return v;
+  });
 
-    // The Clinical Suite already works out who is due back. Its three
-    // lists map onto KuBi's: post-treatment check-ins are follow-ups,
-    // recalls are patients who have not returned, missed are no-shows to
-    // rebook. Phone numbers stay in the Clinical Suite.
+  // The Clinical Suite already works out who is due back. Its three lists
+  // map onto KuBi's: post-treatment check-ins are follow-ups, recalls are
+  // patients who have not returned, missed are no-shows to rebook. Phone
+  // numbers stay in the Clinical Suite.
+  part('followUps', 'gw_f_' + date, GW_TTL.followUps, function () {
     var fu = clinicalRead_('getFollowUps', {});
-    if (!fu.error) {
-      out.followUps = (fu.json.postTreatment || []).map(function (f) {
+    if (fu.error) return fu;
+    return {
+      followUps: (fu.json.postTreatment || []).map(function (f) {
         return { id: 'PT|' + gwStr_(f.uhid) + '|' + gwStr_(f.dueDate), uhid: gwStr_(f.uhid),
                  patient: gwStr_(f.name), reason: gwStr_(f.procedure),
                  treatedOn: gwDate_(f.treatmentDate), due: gwDate_(f.dueDate), caseId: null };
-      });
-      out.recall = (fu.json.recall || []).map(function (r) {
+      }),
+      recall: (fu.json.recall || []).map(function (r) {
         return { uhid: gwStr_(r.uhid), patient: gwStr_(r.name), lastVisit: gwDate_(r.lastVisit),
                  daysSince: gwNum_(r.daysSince) };
-      });
-      out.missed = (fu.json.missed || []).map(function (r) {
+      }),
+      missed: (fu.json.missed || []).map(function (r) {
         return { uhid: gwStr_(r.uhid), patient: gwStr_(r.name), date: gwDate_(r.date),
                  status: gwStr_(r.status), type: gwStr_(r.type) };
-      });
-    }
-    var dr = clinicalRead_('getDoctorsList', {});
-    if (!dr.error) out.doctors = (dr.json.doctors || []).map(gwStr_);
-    var ch = clinicalRead_('getChairsList', {});
-    if (!ch.error) out.chairs = (ch.json.chairs || []).map(gwStr_);
-  }
+      }),
+    };
+  });
 
-  gwCachePut_('gw_feed_' + date, out, GATEWAY_CACHE_SEC);
+  part('lists', 'gw_l', GW_TTL.lists, function () {
+    var dr = clinicalRead_('getDoctorsList', {});
+    if (dr.error) return dr;
+    var ch = clinicalRead_('getChairsList', {});
+    if (ch.error) return ch;
+    return { doctors: (dr.json.doctors || []).map(gwStr_), chairs: (ch.json.chairs || []).map(gwStr_) };
+  });
+
+  // A part that failed still leaves its keys present and empty, so KuBi
+  // never has to guard every field. `sources` is where it learns why.
+  ['staff', 'attendance', 'leave', 'tasksDone', 'inventory', 'equipment', 'sterilisation',
+   'appointments', 'upcoming', 'followUps', 'recall', 'missed', 'doctors', 'chairs', 'casesMissing']
+    .forEach(function (k) { if (!out[k]) out[k] = []; });
+  if (!out.cases) out.cases = {};
   return out;
+}
+
+/** Forget every cached part for a date, so the next feed asks the apps again. */
+function gatewayForget_(date) {
+  ['gw_m_', 'gw_i_', 'gw_c_', 'gw_f_'].forEach(function (p) { gwBigRemove_(p + date); });
+  gwBigRemove_('gw_l');
 }
 
 // ── sign-in with the Management Suite PIN ──────────────────────────────
@@ -511,7 +556,14 @@ function gatewayRoute_(action, p, body) {
  * back. Nothing is written anywhere.
  */
 function gatewayCheck() {
-  CacheService.getScriptCache().remove('gw_feed_' + gwDate_(new Date()));
+  // Names only, never values: a property typed as MGMT_Token is a different
+  // property, and this is how that shows up.
+  var known = { MGMT_URL: 1, MGMT_TOKEN: 1, MGMT_INV_URL: 1, CLINICAL_URL: 1, CLINICAL_PASSWORD: 1 };
+  var names = Object.keys(PropertiesService.getScriptProperties().getProperties());
+  Logger.log('Script properties: ' + (names.length ? names.map(function (n) {
+    return n + (known[n] ? '' : ' (not a name the gateway reads)');
+  }).join(', ') : 'none'));
+  gatewayForget_(gwDate_(new Date()));
   var f = gatewayFeed_(gwDate_(new Date()));
   Object.keys(f.sources).forEach(function (k) {
     var s = f.sources[k];

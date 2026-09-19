@@ -22,13 +22,23 @@ const cache = {};
 let now = Date.now();
 global.PropertiesService = { getScriptProperties: () => ({
   getProperty: k => (k in props ? props[k] : null),
+  getProperties: () => Object.assign({}, props),
   setProperty: (k, v) => { props[k] = v; },
 }) };
-global.CacheService = { getScriptCache: () => ({
-  get: k => (cache[k] && cache[k].until > now ? cache[k].v : null),
-  put: (k, v, sec) => { cache[k] = { v: v, until: now + (sec || 600) * 1000 }; },
-  remove: k => { delete cache[k]; },
-}) };
+global.CacheService = { getScriptCache: () => {
+  const c = {
+    get: k => (cache[k] && cache[k].until > now ? cache[k].v : null),
+    // Google refuses anything over 100 KB; so does this.
+    put: (k, v, sec) => {
+      if (Buffer.byteLength(String(v), 'utf8') > 100000) throw new Error('Argument too large');
+      cache[k] = { v: v, until: now + (sec || 600) * 1000 };
+    },
+    getAll: keys => { const o = {}; keys.forEach(k => { const v = c.get(k); if (v != null) o[k] = v; }); return o; },
+    putAll: (o, sec) => { Object.keys(o).forEach(k => c.put(k, o[k], sec)); },
+    remove: k => { delete cache[k]; },
+  };
+  return c;
+} };
 global.Utilities = {
   formatDate(d, tz, fmt) {
     const x = new Date(d);
@@ -62,6 +72,8 @@ const mgmtSheets = {
   // reach KuBi.
   RoleEmployees: [
     { roleCode: 'STT', id: 'S6', name: 'Suresh Kumar', pin: '4455', branch: 'Main' },
+    // The live sheet holds the same assignment twice for the riders.
+    { roleCode: 'STT', id: 'S6b', name: 'Suresh Kumar', pin: '4455', branch: 'Main' },
   ],
   Attendance: [
     { id: 'a1', staffId: 'S1', staffName: 'Priya Sharma', date: TODAY, checkIn: '08:55', checkOut: null, lateMin: 0, locIn: '28.6,77.2' },
@@ -150,6 +162,7 @@ global.UrlFetchApp = { fetch(url, o) {
       return reply({ success: true, appointments: clinical.appointments.filter(a => a.date >= p.fromDate && a.date <= p.toDate) });
     }
     if (p.action === 'getCaseState') return reply(clinical.cases[p.caseId] || { success: false, error: 'Case not found' });
+    if (p.action === 'getFollowUps' && clinical.followUpsDown) return reply({}, 502);
     if (p.action === 'getFollowUps') return reply({ success: true,
       postTreatment: [{ uhid: 'U9', name: 'Sanjay Bhatt', mobile: '9811100000', procedure: 'Extraction review', treatmentDate: '2026-09-12', dueDate: '2026-09-19', overdueDays: 0 }],
       recall: [{ uhid: 'U8', name: 'Leela Menon', mobile: '9811100001', lastVisit: '2026-01-02', daysSince: 260 }],
@@ -259,13 +272,54 @@ check('the Clinical Suite is only ever READ',
       [...new Set(clinActions)].join(','));
 
 // ---- cache ---------------------------------------------------------------
+// Each app's part is remembered for as long as its data sensibly stays
+// true: appointments under a minute, stock for ten.
 const before = sent.length;
 const again = get('feed', { date: TODAY });
 check('a second look within the minute does not ask the other apps again',
-      again.cached === true && sent.length === before);
-now += (GATEWAY_CACHE_SEC + 1) * 1000;
-get('feed', { date: TODAY });
-check('...but after it, it does', sent.length > before);
+      Object.keys(again.sources).every(k => again.sources[k].cached === true) && sent.length === before,
+      Object.keys(again.sources).map(k => k + ':' + again.sources[k].cached).join(' '));
+check('...and answers the same as the first time',
+      JSON.stringify(again.appointments) === JSON.stringify(feed.appointments) &&
+      again.inventory.length === feed.inventory.length);
+now += (GW_TTL.clinical + 1) * 1000;
+const later = get('feed', { date: TODAY });
+check('after a minute, appointments are asked for again',
+      later.sources.clinical.cached === false && sent.length > before);
+check('...but stock is not, it changes slowly',
+      later.sources.inventory.cached === true);
+now += GW_TTL.inventory * 1000;
+check('...until ten minutes have passed', get('feed', { date: TODAY }).sources.inventory.cached === false);
+
+// A stock list bigger than one cache entry (the clinic's is ~150 KB) must
+// still be remembered, in pieces, and come back whole.
+const bigInv = invSheets.InventoryItems;
+invSheets.InventoryItems = Array.from({ length: 1500 }, (_, i) =>
+  ({ id: 'b' + i, name: 'Item number ' + i + ' लिग्नोकेन', cat: 'Consumables', stock: String(i), reorder: '5', uom: 'box' }));
+Object.keys(cache).forEach(k => delete cache[k]);
+const bigFirst = get('feed', { date: TODAY });
+const bigPieces = Object.keys(cache).filter(k => /^gw_i_.*#\d+$/.test(k)).length;
+const sentBig = sent.length;
+const bigAgain = get('feed', { date: TODAY });
+check('a large stock list is cached in pieces',
+      bigPieces > 1 && Object.keys(cache).filter(k => /^gw_i_/.test(k)).every(k => Buffer.byteLength(cache[k].v, 'utf8') < 100000),
+      bigPieces + ' pieces');
+check('...and comes back whole, Hindi included',
+      bigAgain.sources.inventory.cached === true && sent.length === sentBig &&
+      bigAgain.inventory.length === 1500 && bigAgain.inventory[1499].name === bigFirst.inventory[1499].name);
+invSheets.InventoryItems = bigInv;
+
+// A part that failed says so, however small.
+Object.keys(cache).forEach(k => delete cache[k]);
+const realFu = clinical.followUpsDown;
+clinical.followUpsDown = true;
+const fuDown = get('feed', { date: TODAY });
+check('follow-ups failing is reported, not hidden behind an empty list',
+      fuDown.sources.followUps.ok === false && fuDown.sources.clinical.ok === true &&
+      fuDown.appointments.length === 2 && Array.isArray(fuDown.followUps));
+check('...and a failure is not cached, so the next look tries again',
+      !Object.keys(cache).some(k => /^gw_f_/.test(k)));
+clinical.followUpsDown = realFu;
 
 // ---- one app down --------------------------------------------------------
 Object.keys(cache).forEach(k => delete cache[k]);
@@ -333,6 +387,15 @@ check('gatewayCheck contacts all three sources and logs each',
       logged.join(' | '));
 check('...and logs no names, PINs or phone numbers',
       !logged.some(l => /Priya|Arjun|1111|98765/.test(l)));
+props.MGMT_Token = 'typed-wrong';
+logged.length = 0;
+gatewayCheck();
+check('gatewayCheck names a mistyped property, without showing its value',
+      logged.some(l => /MGMT_Token \(not a name the gateway reads\)/.test(l)) &&
+      !logged.some(l => /typed-wrong/.test(l)), logged[0]);
+delete props.MGMT_Token;
+check('a role assigned twice is counted once',
+      feed.staff.find(s => s.name === 'Suresh Kumar').roleCodes.filter(c => c === 'STT').length === 1);
 
 // ---- summary --------------------------------------------------------------
 const failed = results.filter(r => !r.pass);

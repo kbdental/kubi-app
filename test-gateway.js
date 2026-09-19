@@ -322,6 +322,18 @@ check('five wrong tries lock the name for a minute, even for the right PIN',
 now += (SIGNIN_LOCK_SEC + 1) * 1000;
 check('...and it unlocks after', si('Nisha Verma', '2222').ok === true);
 
+// ---- the editor check the owner runs once ------------------------------
+Object.keys(cache).forEach(k => delete cache[k]);
+const logged = [];
+global.Logger = { log: m => logged.push(String(m)) };
+const chk = gatewayCheck();
+check('gatewayCheck contacts all three sources and logs each',
+      chk.management.ok && chk.inventory.ok && chk.clinical.ok &&
+      logged.some(l => /^management: OK/.test(l)) && logged.some(l => /appointments today 2/.test(l)),
+      logged.join(' | '));
+check('...and logs no names, PINs or phone numbers',
+      !logged.some(l => /Priya|Arjun|1111|98765/.test(l)));
+
 // ---- summary --------------------------------------------------------------
 const failed = results.filter(r => !r.pass);
 console.log('\n================================');

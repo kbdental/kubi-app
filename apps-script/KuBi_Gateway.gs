@@ -501,3 +501,24 @@ function gatewayRoute_(action, p, body) {
                                        : { status: 'error', message: 'signIn must be a POST' };
   return null;
 }
+
+/**
+ * Run this once from the editor (choose gatewayCheck in the function
+ * dropdown, then ▷ Run). It contacts both apps, so Google asks for the
+ * "connect to an external service" permission the gateway needs — running
+ * setup() does not, because setup never leaves the spreadsheet. Afterwards
+ * the Execution log shows, per app, whether it answered and how much came
+ * back. Nothing is written anywhere.
+ */
+function gatewayCheck() {
+  CacheService.getScriptCache().remove('gw_feed_' + gwDate_(new Date()));
+  var f = gatewayFeed_(gwDate_(new Date()));
+  Object.keys(f.sources).forEach(function (k) {
+    var s = f.sources[k];
+    Logger.log(k + ': ' + (s.ok ? 'OK' : 'NOT OK — ' + s.error));
+  });
+  Logger.log('staff ' + f.staff.length + ', attendance today ' + f.attendance.length +
+             ', stock items ' + f.inventory.length + ', equipment ' + f.equipment.length +
+             ', appointments today ' + f.appointments.length + ', follow-ups ' + f.followUps.length);
+  return f.sources;
+}

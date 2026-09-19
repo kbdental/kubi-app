@@ -119,6 +119,42 @@ The last entry is the stage that has not happened yet, marked as ahead
 rather than dated: a timeline ending in the past says nothing about what
 to do next.
 
+### A case across days: Visit 1 → 2 → 3 → next
+
+The day is stored per date, so at midnight today's work used to leave the
+case: a root canal stage finished on Tuesday was gone by Wednesday, and the
+case still said that stage was "now".
+
+Each visit is now **read off the day and kept** (`src/caseVisits.js`), one
+row per case per date in a **KuBi Case Visits** tab. Nothing is entered for
+it: the patient was seated, the procedure started and finished, the visit
+was written up — KuBi already knew all four.
+
+- **A visit is a patient seated**, not a patient booked. Waiting and leaving
+  is not a visit.
+- **A stage is finished only by a visit that was finished AND written up.**
+  Finished-but-never-written-up shows on the case, in coral, and does not
+  advance it.
+- **Today is always live.** The stored copy of today only matters from
+  tomorrow, so a morning mistake (seated, then no-show) is overwritten
+  rather than left behind as a visit that never happened.
+- **A booking that lags behind the record does not undo a finished stage.**
+  If Wednesday's appointment still says "Cleaning / medication: now" but
+  Tuesday finished and wrote it up, the case moves on to Obturation.
+- **The next visit says whether it is booked** — "Visit 4 · Obturation ·
+  not booked yet" — which is the question front desk actually has.
+- Same first rule as the day: **never write before reading.** Visits are
+  only recorded once the day has come back from the sheet.
+
+The visits tab holds case id, date, stage, times and staff names — **no
+patient names and no clinical detail.**
+
+**Known limits.** The demo appointment list is regenerated every day, so in
+the demo a case booked today still shows its seed stages; real appointments
+would come from the diary. A visit from an earlier day that was finished
+but never written up is shown on the case, but does not yet raise an
+exception on Today.
+
 ## Treatment templates
 
 `treatmentTemplates.js` answers what a procedure BRINGS WITH IT:
@@ -542,8 +578,10 @@ NEW VERSION, change `token` here, and rebuild — in that order.
 
 `apps-script/KuBi_History.gs` is the other half — paste it into the
 sheet's Apps Script editor and deploy it as a web app. Deployment steps
-are in the file's header comment. It keeps two sheets: **KuBi History**,
-one row per finished day, and **KuBi Day**, the day in progress.
+are in the file's header comment. It keeps four sheets: **KuBi History**,
+one row per finished day; **KuBi Day**, the day in progress; **KuBi Day
+Backup**, periodic copies of it; and **KuBi Case Visits**, one row per case
+per date.
 
 The day in progress is what makes a refresh survivable. `src/dayStore.js`
 lists the twelve pieces of state that make up a day; `useClinicDay()` in

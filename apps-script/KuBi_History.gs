@@ -30,10 +30,11 @@ var TOKEN = 'kb-b5mdu6-vpa25g-fkxfcf';   // must match SHEETS_CONFIG.token in Ku
 // Bumped whenever this file changes in a way a deployment must pick up.
 // `ping` reports it, so "is the new version actually live" is answerable
 // without writing anything to the sheet.
-var SCRIPT_VERSION = 4;
+var SCRIPT_VERSION = 5;
 var SHEET_NAME = 'KuBi History';   // one row per finished day
 var DAY_SHEET_NAME = 'KuBi Day';   // the day in progress, so a refresh loses nothing
 var BACKUP_SHEET_NAME = 'KuBi Day Backup';   // periodic copies, so a day can be wound back
+var VISIT_SHEET_NAME = 'KuBi Case Visits';   // one row per case per date, so a case outlives the day
 
 // Column order is the contract with buildSnapshot() in src/history.js.
 // Append new fields at the END so existing rows keep their meaning.
@@ -376,6 +377,85 @@ function dayBackupGet_(date, rev) {
                                    savedAt: pick.v[2], savedBy: pick.v[3], state: state } };
 }
 
+// ── case visits ──────────────────────────────────────────────────────
+// The day row is per date, so at midnight a case loses sight of what
+// happened to it. These rows keep it: one per case per date, upserted as
+// the day goes on, read back so Visit 1 → 2 → 3 survives the night.
+//
+// No patient names and no clinical detail — the case id joins back to the
+// case. Only what KuBi needs to know the visit happened and how it ended.
+var VISIT_HEADERS = ['key', 'caseId', 'date', 'stage', 'apptId', 'doctor', 'attended',
+                     'startedAt', 'completedAt', 'documentedAt', 'documentedBy', 'updatedAt'];
+
+function visitSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(VISIT_SHEET_NAME);
+  if (!sh) {
+    sh = ss.insertSheet(VISIT_SHEET_NAME);
+    sh.appendRow(VISIT_HEADERS);
+    sh.setFrozenRows(1);
+    sh.getRange('A:C').setNumberFormat('@');
+    sh.getRange('H:J').setNumberFormat('@');   // ISO times stay text, not reformatted
+  }
+  ensureHeaders_(sh, VISIT_HEADERS);
+  return sh;
+}
+
+function visitRowOf_(sh, key) {
+  var last = sh.getLastRow();
+  if (last < 2) return 0;
+  var col = sh.getRange(2, 1, last - 1, 1).getValues();
+  for (var i = 0; i < col.length; i++) if (String(col[i][0]) === key) return i + 2;
+  return 0;
+}
+
+function caseVisitsAll_() {
+  var sh = visitSheet_();
+  var last = sh.getLastRow();
+  if (last < 2) return { status: 'ok', rows: [] };
+  var values = sh.getRange(2, 1, last - 1, VISIT_HEADERS.length).getValues();
+  var rows = [];
+  values.forEach(function (v) {
+    if (!v[0]) return;
+    var o = {};
+    VISIT_HEADERS.forEach(function (h, i) {
+      var val = v[i];
+      if (h === 'date') val = dateKey_(val);
+      else if (h === 'attended') val = (val === true || String(val).toLowerCase() === 'true');
+      else if (val === '' || val === undefined) val = null;
+      else if (val instanceof Date) val = val.toISOString();
+      o[h] = val;
+    });
+    if (o.updatedAt !== undefined) delete o.updatedAt;   // the sheet's, not the visit's
+    rows.push(o);
+  });
+  return { status: 'ok', rows: rows };
+}
+
+/** Upsert by key (caseId|date). The same visit told twice is one row. */
+function caseVisitPut_(v) {
+  if (!v || !v.caseId || !v.date) return { status: 'error', message: 'visit needs caseId and date' };
+  var key = String(v.caseId) + '|' + String(v.date);
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(20000); } catch (e) { return { status: 'error', message: 'busy' }; }
+  try {
+    var sh = visitSheet_();
+    var row = VISIT_HEADERS.map(function (h) {
+      if (h === 'key') return key;
+      if (h === 'updatedAt') return new Date();
+      if (h === 'attended') return v.attended === true;
+      var x = v[h];
+      return (x === undefined || x === null) ? '' : String(x);
+    });
+    var at = visitRowOf_(sh, key);
+    if (at) sh.getRange(at, 1, 1, VISIT_HEADERS.length).setValues([row]);
+    else sh.appendRow(row);
+    return { status: 'ok', key: key, replaced: !!at };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 // ── entry points ─────────────────────────────────────────────────────
 function doGet(e) {
   try {
@@ -387,6 +467,7 @@ function doGet(e) {
     if (p.action === 'dayGet') return jsonOut_(dayGet_(p.date));
     if (p.action === 'dayBackups') return jsonOut_(dayBackups_(p.date));
     if (p.action === 'dayBackupGet') return jsonOut_(dayBackupGet_(p.date, p.rev));
+    if (p.action === 'caseVisitsAll') return jsonOut_(caseVisitsAll_());
     return jsonOut_({ status: 'error', message: 'unknown action' });
   } catch (err) {
     return jsonOut_({ status: 'error', message: String(err) });
@@ -406,6 +487,7 @@ function doPost(e) {
     if (p.action === 'historyPut') return jsonOut_(historyPut_(body.snapshot));
     if (p.action === 'historyRemove') return jsonOut_(historyRemove_(body.date));
     if (p.action === 'dayPut') return jsonOut_(dayPut_(body.date, body.state, body.baseRev, body.by));
+    if (p.action === 'caseVisitPut') return jsonOut_(caseVisitPut_(body.visit));
     return jsonOut_({ status: 'error', message: 'unknown action' });
   } catch (err) {
     return jsonOut_({ status: 'error', message: String(err) });
@@ -417,5 +499,6 @@ function setup() {
   sheet_();
   daySheet_();
   backupSheet_();
+  visitSheet_();
   Logger.log('Ready. Days on file: ' + historyAll_().rows.length);
 }

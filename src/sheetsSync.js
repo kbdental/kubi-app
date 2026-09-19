@@ -145,6 +145,19 @@ window.KuBi.historySync = (function () {
         });
     },
 
+    // ---- visits, one small row per case per date ----------------------
+    // null means unreachable; an empty array means the tab holds nothing.
+    visitsAll: function () {
+      return request({ action: 'caseVisitsAll' }).then(function (json) {
+        return json && Array.isArray(json.rows) ? json.rows : null;
+      });
+    },
+
+    visitPut: function (visit) {
+      return request({ action: 'caseVisitPut', body: { visit: visit } })
+        .then(function (json) { return !!json; });
+    },
+
     /** What copies exist for a date, newest first. */
     dayBackups: function (date) {
       return request({ action: 'dayBackups', extra: '&date=' + encodeURIComponent(date) })

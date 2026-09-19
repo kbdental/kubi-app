@@ -1632,6 +1632,181 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
                                       K.t('fu.state.' + st, 'hi') !== 'fu.state.' + st),
         K.FOLLOWUP_STATES.join(', '));
 
+  // 46. MULTI-DAY CASE HISTORY — Visit 1 → 2 → 3 → next, across real days.
+  //     The day is stored per date, so at midnight today's work used to
+  //     leave the case. A visit is now read off the day and kept; nobody
+  //     enters it. These checks walk a case from one day into the next.
+  const mvStore = K.caseVisitStore;
+  const mvCfg = w.KuBi.SHEETS_CONFIG;
+  w.KuBi.SHEETS_CONFIG = { url: '', token: '' };       // memory only for the logic
+  mvStore.reset();
+  const mvAgo = n => K.operatingDate(new Date(Date.now() - n * 86400000));
+  const AP = 'AP0311-RCT_MOLAR-01';
+  const mvNone = { appointments: [], procedureState: {}, closedCases: {}, labReceived: {} };
+  const mvA1 = over => Object.assign({}, K.APPOINTMENTS_TODAY.find(a => a.id === 'A1'), over || {});
+  const mvShow = list => list.map(x => x.name + (x.done ? ' done' : x.current ? ' NOW' : '')).join(', ');
+
+  // What the case already knew before KuBi kept anything.
+  const apStages = K.caseStageList(AP, []);
+  check('Stages finished in the case history count as finished',
+        apStages[0].done === true && apStages.filter(x => x.current).length === 1 &&
+        apStages.find(x => x.current).name === 'Cleaning / medication', mvShow(apStages));
+  const apVisits = K.caseVisitList(AP, mvNone);
+  check('Earlier visits are numbered from the dates, oldest first',
+        apVisits.length === 2 && apVisits[0].n === 1 && apVisits[1].n === 2 &&
+        apVisits[0].on < apVisits[1].on && apVisits[1].stage === 'Cleaning',
+        apVisits.map(v => v.n + ':' + v.on + ':' + (v.stage || 'opened')).join(' '));
+
+  // Today, live.
+  const apToday = K.caseVisitList(AP, { appointments: [mvA1()], procedureState: {}, closedCases: {} });
+  check('Today is the next visit, read live from the chair',
+        apToday.length === 3 && apToday[2].today === true && apToday[2].stage === 'Cleaning / medication',
+        apToday.length + ' visits');
+  const dayVisits = K.visitsFromDay(K.operatingDate(), K.APPOINTMENTS_TODAY, {}, {});
+  check('A visit is a patient seated, not a patient booked',
+        dayVisits.find(v => v.apptId === 'A1').attended === true &&
+        dayVisits.find(v => v.apptId === 'A2').attended === false &&
+        dayVisits.find(v => v.apptId === 'A4').attended === false,
+        'A1 seated, A2 waiting, A4 booked');
+  check('Appointments with no case make no visits', !dayVisits.some(v => v.apptId === 'A5'));
+  check('A visit keeps no patient name', dayVisits.every(v => !('patient' in v)),
+        Object.keys(dayVisits[0]).join(','));
+
+  // ---- DAY 1: the visit happens, is finished and written up ----
+  const d1 = mvAgo(1);
+  const finishedA1 = K.visitsFromDay(d1, [mvA1({ status: 'done' })],
+    { A1: { startedAt: new Date(Date.now() - 86400000 - 3600000), completedAt: new Date(Date.now() - 86400000) } },
+    { A1: { closedAt: new Date(Date.now() - 86400000), closedBy: 'Dr. Ananya Rao' } });
+  mvStore.put(finishedA1[0]);
+
+  // ---- DAY 2: nobody booked in for the case ----
+  const day2 = K.caseStageList(AP, []);
+  check('Next day: yesterday\'s stage is done, without anybody saying so',
+        day2[1].done === true && day2.find(x => x.current).name === 'Obturation', mvShow(day2));
+  const day2Visits = K.caseVisitList(AP, mvNone);
+  check('Next day: the case shows Visit 1 → 2 → 3',
+        day2Visits.length === 3 && day2Visits[2].on === d1 && day2Visits[2].stage === 'Cleaning / medication' &&
+        day2Visits[2].completed && day2Visits[2].documented,
+        day2Visits.map(v => 'V' + v.n + ' ' + v.on).join(' → '));
+  const nv = K.caseNextVisit(AP, mvNone);
+  check('...→ next: Visit 4, for the next stage',
+        !!nv && nv.n === 4 && nv.stage === 'Obturation', nv && ('V' + nv.n + ' ' + nv.stage));
+  check('...and it says nobody has booked it', !!nv && nv.bookedFor === null);
+  const tl2 = K.caseTimeline(AP, mvNone);
+  check('Yesterday is on the timeline, finished and written up',
+        tl2.some(e => e.on === d1 && e.kind === 'visitCompleted' && e.stage === 'Cleaning / medication') &&
+        tl2.some(e => e.on === d1 && e.kind === 'visitDocumented' && e.by === 'Dr. Ananya Rao'));
+  check('The timeline still ends looking forward',
+        tl2[tl2.length - 1].ahead === true && tl2[tl2.length - 1].stage === 'Obturation' &&
+        tl2[tl2.length - 1].visit === 4);
+
+  // A booking that lags behind what happened: the appointment still says
+  // "Cleaning / medication: now". What was finished and written up wins.
+  const stale = K.caseStageList(AP, [mvA1()]);
+  check('A booking that lags behind the record does not undo a finished stage',
+        stale[1].done === true && stale.filter(x => x.current).length === 1 &&
+        stale.find(x => x.current).name === 'Obturation', mvShow(stale));
+
+  // Not every visit finishes a stage.
+  mvStore.reset();
+  mvStore.put(K.visitsFromDay(d1, [mvA1({ status: 'done' })],
+    { A1: { startedAt: new Date(Date.now() - 86400000), completedAt: new Date(Date.now() - 86400000) } }, {})[0]);
+  check('Finished but never written up does not complete the stage',
+        K.caseStageList(AP, []).find(x => x.current).name === 'Cleaning / medication');
+  check('...and the timeline says so plainly',
+        K.caseTimeline(AP, mvNone).some(e => e.on === d1 && e.kind === 'visitNotDocumented'));
+  check('...and the visit list flags it',
+        K.caseVisitList(AP, mvNone).some(v => v.on === d1 && v.completed && !v.documented));
+  mvStore.reset();
+  mvStore.put(K.visitsFromDay(d1, [mvA1({ status: 'in_chair' })],
+    { A1: { startedAt: new Date(Date.now() - 86400000) } }, {})[0]);
+  check('Started and not finished does not complete the stage',
+        K.caseStageList(AP, []).find(x => x.current).name === 'Cleaning / medication');
+
+  // Today is never read from the store.
+  mvStore.reset();
+  mvStore.put(K.visitsFromDay(K.operatingDate(), [mvA1({ status: 'done' })],
+    { A1: { startedAt: new Date(), completedAt: new Date() } }, { A1: { closedAt: new Date() } })[0]);
+  check('Today\'s visit is always live, never the stored copy',
+        K.caseStageList(AP, []).find(x => x.current).name === 'Cleaning / medication' &&
+        K.caseVisitList(AP, mvNone).length === 2);
+
+  // The morning mistake: seated, then no-show. The stored row is
+  // overwritten, not left behind as a visit that never happened.
+  mvStore.reset();
+  mvStore.recordDay(d1, [mvA1({ status: 'in_chair' })], {}, {});
+  mvStore.recordDay(d1, [mvA1({ status: 'no_show' })], {}, {});
+  check('A visit that turned out not to happen is taken back',
+        !!mvStore.get(AP, d1) && mvStore.get(AP, d1).attended === false &&
+        !K.caseVisitList(AP, mvNone).some(v => v.on === d1));
+  mvStore.reset();
+  mvStore.recordDay(d1, K.APPOINTMENTS_TODAY, {}, {});
+  check('Nobody seated, no row written',
+        mvStore.all().length === 1 && mvStore.all()[0].apptId === 'A1',
+        mvStore.all().map(v => v.apptId).join(','));
+
+  // Booked, or not.
+  const vsNext = K.caseNextVisit('VS0221-CROWN_SINGLE-01', mvNone);
+  check('A next visit already in the diary says when',
+        !!vsNext && !!vsNext.bookedFor && vsNext.bookedFor > K.operatingDate(), vsNext && vsNext.bookedFor);
+  const closedScal = { appointments: [{ id: 'S1', patient: 'Kabir Singh', chair: 3, status: 'done',
+                        procedureType: 'Scaling', time: '10:45', caseId: 'KS0502-SCALING-01',
+                        caseStages: [{ name: 'Scaling + polishing', done: true }] }],
+                      procedureState: { S1: { startedAt: new Date(), completedAt: new Date() } },
+                      closedCases: { S1: { closedAt: new Date(), closedBy: 'Dr. Ananya Rao' } } };
+  check('A closed case has no next visit — what follows is a follow-up',
+        K.caseNextVisit('KS0502-SCALING-01', closedScal) === null);
+
+  // ---- the sheet: what makes day 2 day 2 ----
+  mvStore.reset();
+  w.KuBi.SHEETS_CONFIG = { url: 'https://example.invalid/exec', token: 't' };
+  const mvSent = [];
+  w.fetch = (url, init) => {
+    mvSent.push({ url: url, body: init && init.body });
+    if (/action=caseVisitsAll/.test(url)) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok', rows: [finishedA1[0]] }) });
+    }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+  };
+  let mvWoke = 0;
+  const mvOff = mvStore.subscribe(() => { mvWoke++; });
+  await mvStore.hydrate();
+  check('A fresh load the next morning brings the case\'s visits back',
+        mvStore.state().hydrated && K.caseStageList(AP, []).find(x => x.current).name === 'Obturation' &&
+        mvWoke > 0, 'woke ' + mvWoke);
+
+  mvSent.length = 0;
+  const v2 = K.visitsFromDay(K.operatingDate(), [mvA1()], {}, {})[0];
+  await mvStore.put(v2);
+  await mvStore.put(JSON.parse(JSON.stringify(v2)));
+  check('A visit goes to the sheet once, not on every render',
+        mvSent.filter(x => /caseVisitPut/.test(x.url)).length === 1,
+        mvSent.filter(x => /caseVisitPut/.test(x.url)).length + ' write(s)');
+
+  w.fetch = () => Promise.reject(new Error('offline'));
+  await mvStore.put(Object.assign({}, v2, { completedAt: new Date().toISOString() }));
+  check('An offline visit is held, not lost', mvStore.state().pending === 1);
+  w.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+  await mvStore.flush();
+  check('...and sent once the sheet is back', mvStore.state().pending === 0);
+
+  w.fetch = () => Promise.reject(new Error('offline'));
+  mvStore.reset();
+  check('An unreachable sheet is not mistaken for a case with no visits',
+        (await mvStore.hydrate()) === false && mvStore.state().hydrated === false);
+
+  mvOff();
+  mvStore.reset();
+  w.KuBi.SHEETS_CONFIG = mvCfg;
+  delete w.fetch;
+
+  const mvKeys = ['visit.title', 'visit.n', 'visit.opened', 'visit.today', 'visit.inProgress', 'visit.finished',
+                  'visit.notWrittenUp', 'visit.next', 'visit.bookedFor', 'visit.notBooked', 'visit.none',
+                  'case.stages', 'timeline.visitNotDocumented'];
+  check('Every visit word exists in both languages',
+        mvKeys.every(k => K.t(k, 'en') !== k && K.t(k, 'hi') !== k && K.t(k, 'hi') !== K.t(k, 'en')),
+        mvKeys.length + ' strings');
+
   // SUMMARY
   await step(() => {}, 150);
   const failed = results.filter(r => !r.pass);

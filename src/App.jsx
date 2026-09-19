@@ -262,6 +262,26 @@ function useClinicDay() {
     return function () { clearInterval(timer); };
   }, []);
 
+  // ---- the case outlives the day ----------------------------------------
+  // Each case visit is read off the day as it happens and kept, so tomorrow
+  // the case still knows what today did to it. Nothing is entered for this.
+  //
+  // Same first rule as the day: never write before reading. Until the day
+  // has come back from the sheet, the state on screen is seed data, and a
+  // visit recorded from seed data would be a visit that never happened.
+  const [, setVisitsSeen] = React.useState(0);
+  React.useEffect(function () {
+    const store = window.KuBi.caseVisitStore;
+    const off = store.subscribe(function () { setVisitsSeen(function (n) { return n + 1; }); });
+    store.hydrate();
+    return off;
+  }, []);
+  React.useEffect(function () {
+    if (window.KuBi.historySync.isConfigured() && !armed.current) return;
+    window.KuBi.caseVisitStore.recordDay(window.KuBi.operatingDate(),
+                                         appointments, procedureState, closedCases);
+  }, [appointments, procedureState, closedCases, saveState.status]);
+
   // The day, plus whether it is actually reaching the sheet.
   day.saveState = saveState;
   return day;

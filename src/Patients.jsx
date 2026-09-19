@@ -84,7 +84,7 @@ window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setS
         </div>
 
         <div className="case-status-label case-visits-label">
-          {t('case.visits', lang)} {thread.progress.visitsDone} / {thread.progress.visitsTotal}
+          {t('case.stages', lang)} {thread.progress.visitsDone} / {thread.progress.visitsTotal}
         </div>
         <ul className="case-visit-list">
           {thread.progress.stages.map(function (st, i) {
@@ -96,6 +96,43 @@ window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setS
             );
           })}
         </ul>
+
+        {/* Visit 1 → 2 → 3 → next. Read off what each day already
+            recorded; nobody numbers or enters a visit. */}
+        <div className="case-status-block case-visits-block">
+          <div className="card-title">{t('visit.title', lang)}</div>
+          {thread.visits.length === 0 && !thread.nextVisit ? (
+            <p className="module-sub">{t('visit.none', lang)}</p>
+          ) : (
+            <ol className="visit-list">
+              {thread.visits.map(function (v) {
+                const what = v.stage || (v.opened ? t('visit.opened', lang) : '—');
+                const how = v.today
+                  ? (v.completed ? t('visit.finished', lang) : t('visit.inProgress', lang))
+                  : (v.completed && !v.documented ? t('visit.notWrittenUp', lang) : null);
+                return (
+                  <li key={v.on} className={'visit-row' + (v.today ? ' visit-today' : '') +
+                                            (v.completed && !v.documented && !v.today ? ' visit-warn' : '')}>
+                    <span className="visit-n">{t('visit.n', lang)} {v.n}</span>
+                    <span className="visit-when mono">{v.today ? t('visit.today', lang) : v.on}</span>
+                    <span className="visit-what">{what}{how ? ' · ' + how : ''}</span>
+                  </li>
+                );
+              })}
+              {thread.nextVisit ? (
+                <li className={'visit-row visit-next' + (thread.nextVisit.bookedFor ? '' : ' visit-unbooked')}>
+                  <span className="visit-n">{t('visit.n', lang)} {thread.nextVisit.n}</span>
+                  <span className="visit-when">{t('visit.next', lang)}</span>
+                  <span className="visit-what">
+                    {thread.nextVisit.stage} · {thread.nextVisit.bookedFor
+                      ? t('visit.bookedFor', lang) + ' ' + thread.nextVisit.bookedFor
+                      : t('visit.notBooked', lang)}
+                  </span>
+                </li>
+              ) : null}
+            </ol>
+          )}
+        </div>
 
         <div className="case-status-row">
           <span className="case-status-label">{t('case.today', lang)}</span>
@@ -158,7 +195,10 @@ window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setS
               } else if (e.kind === 'labSent' || e.kind === 'labReceived') {
                 label = (e.item ? (e.item[lang] || e.item.en) + ' ' : '') + t('timeline.' + e.kind, lang);
               } else if (e.kind === 'nextStage') {
-                label = e.stage;
+                // Forward-looking, so it says the one thing front desk needs:
+                // is anybody booked for it.
+                label = e.stage + ' · ' + (e.bookedFor ? t('visit.bookedFor', lang) + ' ' + e.bookedFor
+                                                       : t('visit.notBooked', lang));
               } else {
                 label = (e.stage ? e.stage + ' ' : '') + t('timeline.' + e.kind, lang);
               }

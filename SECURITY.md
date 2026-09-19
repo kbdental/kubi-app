@@ -16,7 +16,7 @@ Anyone holding that file holds the token. That is adequate for a pilot and is
 
 ## What is actually stored, and where
 
-The Apps Script keeps two tabs in one spreadsheet.
+The Apps Script keeps four tabs in one spreadsheet.
 
 ### `KuBi Day` — identifiable, and the reason this matters
 
@@ -40,6 +40,18 @@ One row per finished day, counts only: booked, arrived, completed, no-shows,
 waits, readiness percentage, exception totals and kinds, cases open,
 follow-ups due. **No names.** A leak here is commercially uncomfortable, not
 a patient confidentiality matter.
+
+### `KuBi Day Backup` — identifiable, same as `KuBi Day`
+
+Periodic copies of the day, so the same contents and the same care.
+
+### `KuBi Case Visits` — pseudonymous
+
+One row per case per date: case id, date, stage name, times, and the
+dentist's and documenting staff member's names. **No patient names, no
+diagnosis.** The case id (e.g. `AP0311-RCT_MOLAR-01`) is a key into
+the case list, not a name — but together with the day rows it re-identifies,
+so treat it as part of the same sheet, not a separately safe one.
 
 ### Not stored in the sheet at all
 

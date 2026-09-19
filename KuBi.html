@@ -685,6 +685,20 @@
   .backup-when, .backup-who { font-size: 12.5px; color: var(--ink-soft); }
   @media (max-width: 600px) { .backup-row { grid-template-columns: 1fr auto; } }
 
+  .visit-list { list-style: none; margin: 8px 0 0; padding: 0; }
+  .visit-row {
+    display: grid; grid-template-columns: 70px 92px 1fr; gap: 10px; align-items: baseline;
+    padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px;
+  }
+  .visit-row:last-child { border-bottom: none; }
+  .visit-n { font-weight: 700; }
+  .visit-when { color: var(--ink-soft); font-size: 12.5px; }
+  .visit-today .visit-n, .visit-today .visit-when { color: var(--teal); }
+  .visit-warn .visit-what { color: var(--coral); }
+  .visit-next { color: var(--ink-soft); font-style: italic; }
+  .visit-unbooked .visit-what { color: var(--coral); font-style: normal; font-weight: 600; }
+  @media (max-width: 600px) { .visit-row { grid-template-columns: 62px 1fr; } .visit-what { grid-column: 1 / -1; } }
+
   /* ---------- Case view ---------- */
   .case-view { padding: 20px; }
   .case-back { margin-bottom: 16px; }
@@ -867,7 +881,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 02 Sept 2026, 03:20 pm';
+  window.KuBi.BUILD_STAMP = 'Build: 19 Sept 2026, 10:45 am';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -34482,6 +34496,58 @@ window.KuBi.STRINGS = {
     en: 'Today',
     hi: 'आज'
   },
+  'timeline.visitNotDocumented': {
+    en: 'finished, never written up',
+    hi: 'खत्म हुआ, पर दर्ज नहीं हुआ'
+  },
+  'case.stages': {
+    en: 'Stages',
+    hi: 'चरण'
+  },
+  'visit.title': {
+    en: 'Visits',
+    hi: 'विज़िट'
+  },
+  'visit.n': {
+    en: 'Visit',
+    hi: 'विज़िट'
+  },
+  'visit.opened': {
+    en: 'Case opened',
+    hi: 'केस शुरू हुआ'
+  },
+  'visit.today': {
+    en: 'today',
+    hi: 'आज'
+  },
+  'visit.inProgress': {
+    en: 'in progress',
+    hi: 'चल रही है'
+  },
+  'visit.finished': {
+    en: 'finished',
+    hi: 'पूरी हुई'
+  },
+  'visit.notWrittenUp': {
+    en: 'not written up',
+    hi: 'दर्ज नहीं हुई'
+  },
+  'visit.next': {
+    en: 'next',
+    hi: 'अगली'
+  },
+  'visit.bookedFor': {
+    en: 'booked for',
+    hi: 'अपॉइंटमेंट'
+  },
+  'visit.notBooked': {
+    en: 'not booked yet',
+    hi: 'अभी अपॉइंटमेंट नहीं'
+  },
+  'visit.none': {
+    en: 'No visits yet.',
+    hi: 'अभी कोई विज़िट नहीं।'
+  },
   'lapsed.title': {
     en: 'Patients who stopped coming',
     hi: 'जो मरीज़ आना बंद कर गए'
@@ -39294,6 +39360,239 @@ window.KuBi.followUpThreads = function (ctx) {
   });
 };
 
+// ---- src/caseVisits.js ----
+// caseVisits.js — a case remembers its visits from one day to the next.
+//
+//     Visit 1 → Visit 2 → Visit 3 → next
+//
+// THE GAP THIS CLOSES
+// Everything about today's visit lives in the day: who was seated, when the
+// procedure started and finished, whether it was written up. The day is
+// stored per date, so at midnight today's work leaves the case's view — a
+// root canal finished on Tuesday was, by Wednesday, simply gone from the
+// case, and the case still said "Cleaning / medication: now".
+//
+// NOTHING NEW IS ENTERED
+// A visit is not something staff record. It is read off the day as it
+// happens (visitsFromDay) and kept, one small row per case per date. The
+// V2 principle, applied: KuBi already knows the patient was in the chair,
+// that the procedure finished and that it was written up. Asking anybody
+// to say so a second time would be the app's failure, not theirs.
+//
+// WHAT IS KEPT, AND WHAT IS NOT
+// Case id, date, stage, the three timestamps, and who. No patient name and
+// no clinical detail: the case id is enough to join back to the case, and
+// the visits tab should hold nothing the clinical record does not need it
+// to. (SECURITY.md: the day row holds names; this tab does not.)
+//
+// TODAY IS ALWAYS LIVE
+// Today's visit is derived from today's state every time it is asked for.
+// The stored copy of today only matters from tomorrow on. That way a
+// morning mistake (a patient marked seated, then no-show) can never leave a
+// visit behind that did not happen — the stored row is overwritten with
+// `attended: false`, and the live answer never read it anyway.
+
+window.KuBi = window.KuBi || {};
+
+// Seated or beyond. Arrived-and-waiting is not a visit yet: a patient who
+// leaves from the waiting room did not have one.
+const _ATTENDED_STATUSES = {
+  in_chair: true,
+  in_treatment: true,
+  done: true
+};
+function _visitKey(caseId, date) {
+  return caseId + '|' + date;
+}
+
+/**
+ * The stage today's visit is for, under the name the case's stage list
+ * uses — so a visit recorded today can mark the right stage done later.
+ *
+ * The appointment names its current stage in its own words ("Final
+ * fitting"); the case's list may come from the template. Positions are
+ * only trusted when the two lists are the same length, as in caseStageList.
+ */
+window.KuBi.caseStageKey = function (appt) {
+  if (!appt) return null;
+  const stages = appt.caseStages || [];
+  const idx = stages.findIndex(function (s) {
+    return s.current;
+  });
+  const c = window.KuBi.caseById ? window.KuBi.caseById(appt.caseId) : null;
+  if (c && idx >= 0) {
+    const names = c.stages && c.stages.length ? c.stages : window.KuBi.templateStages(c.procedureType);
+    if (names.length === stages.length) return names[idx];
+  }
+  return appt.currentStageName || (idx >= 0 ? stages[idx].name : null);
+};
+
+/**
+ * Visits as the day shows them. Pure: same day in, same visits out.
+ * One per case appointment; `attended` says whether it counts.
+ */
+window.KuBi.visitsFromDay = function (date, appointments, procedureState, closedCases) {
+  return (appointments || []).filter(function (a) {
+    return a && a.caseId;
+  }).map(function (a) {
+    const proc = (procedureState || {})[a.id] || {};
+    const closed = (closedCases || {})[a.id] || null;
+    const attended = !!(proc.startedAt || _ATTENDED_STATUSES[a.status] || closed);
+    const iso = function (v) {
+      return v ? new Date(v).toISOString() : null;
+    };
+    return {
+      key: _visitKey(a.caseId, date),
+      caseId: a.caseId,
+      date: date,
+      apptId: a.id,
+      stage: window.KuBi.caseStageKey(a),
+      doctor: a.doctor || null,
+      attended: attended,
+      startedAt: iso(proc.startedAt),
+      completedAt: iso(proc.completedAt),
+      // No closing time on file: the date will do. Never "now" — a value
+      // that changes on every call would make the visit look new each time.
+      documentedAt: closed ? iso(closed.closedAt) || date : null,
+      documentedBy: closed && closed.closedBy || null
+    };
+  });
+};
+
+/** A visit that finished AND was written up. Only these complete a stage. */
+window.KuBi.visitCompletesStage = function (v) {
+  return !!(v && v.attended && v.completedAt && v.documentedAt && v.stage);
+};
+
+// ---- the store ---------------------------------------------------------
+// Same shape as historyStore: memory first, the sheet mirrored behind it,
+// failed writes held and retried rather than dropped.
+window.KuBi.caseVisitStore = function () {
+  let records = {}; // key -> visit
+  let listeners = [];
+  let pending = {}; // key -> visit the sheet has not accepted yet
+  let hydrated = false;
+  function sync() {
+    return window.KuBi.historySync;
+  }
+  function notify() {
+    listeners.slice().forEach(function (fn) {
+      try {
+        fn();
+      } catch (e) {/* keep going */}
+    });
+  }
+  function same(a, b) {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+  function send(v) {
+    if (!sync() || !sync().isConfigured()) return Promise.resolve(false);
+    return sync().visitPut(v).then(function (ok) {
+      if (ok) {
+        if (pending[v.key] === v) delete pending[v.key];
+      } else pending[v.key] = v;
+      return ok;
+    });
+  }
+  return {
+    all: function () {
+      return Object.keys(records).map(function (k) {
+        return records[k];
+      });
+    },
+    forCase: function (caseId) {
+      return this.all().filter(function (v) {
+        return v.caseId === caseId;
+      }).sort(function (a, b) {
+        return a.date.localeCompare(b.date);
+      });
+    },
+    get: function (caseId, date) {
+      return records[_visitKey(caseId, date)] || null;
+    },
+    /** Upsert. An unchanged visit is not sent again. */
+    put: function (v) {
+      if (!v || !v.key) return Promise.resolve(false);
+      if (same(records[v.key], v)) return Promise.resolve(true);
+      records[v.key] = v;
+      notify();
+      return send(v);
+    },
+    /**
+     * Store what the day shows. A visit that never happened is only
+     * written when a row for it already exists — to overwrite it — so a
+     * normal day adds rows for real visits and nothing else.
+     */
+    recordDay: function (date, appointments, procedureState, closedCases) {
+      const self = this;
+      const jobs = window.KuBi.visitsFromDay(date, appointments, procedureState, closedCases).filter(function (v) {
+        return v.attended || records[v.key];
+      }).map(function (v) {
+        return self.put(v);
+      });
+      return Promise.all(jobs);
+    },
+    hydrate: function () {
+      if (!sync() || !sync().isConfigured()) return Promise.resolve(false);
+      return sync().visitsAll().then(function (rows) {
+        if (!rows) return false;
+        const merged = {};
+        rows.forEach(function (r) {
+          if (r && r.key) merged[r.key] = r;
+        });
+        // Local wins: it is newer, or still waiting to go.
+        Object.keys(records).forEach(function (k) {
+          merged[k] = records[k];
+        });
+        records = merged;
+        hydrated = true;
+        notify();
+        return window.KuBi.caseVisitStore.flush().then(function () {
+          return true;
+        });
+      });
+    },
+    flush: function () {
+      const queue = Object.keys(pending).map(function (k) {
+        return pending[k];
+      });
+      return Promise.all(queue.map(send));
+    },
+    subscribe: function (fn) {
+      listeners.push(fn);
+      return function () {
+        listeners = listeners.filter(function (l) {
+          return l !== fn;
+        });
+      };
+    },
+    state: function () {
+      return {
+        hydrated: hydrated,
+        count: Object.keys(records).length,
+        pending: Object.keys(pending).length
+      };
+    },
+    reset: function () {
+      records = {};
+      listeners = [];
+      pending = {};
+      hydrated = false;
+    }
+  };
+}();
+
+/**
+ * Visits on days BEFORE today, for one case, oldest first. Today's is
+ * never read from here — see the note at the top.
+ */
+window.KuBi.pastVisits = function (caseId) {
+  const today = window.KuBi.operatingDate();
+  return window.KuBi.caseVisitStore.forCase(caseId).filter(function (v) {
+    return v.date < today && v.attended;
+  });
+};
+
 // ---- src/cases.js ----
 // cases.js — the Case: the thread that connects everything KuBi knows
 // about one course of treatment.
@@ -39523,20 +39822,71 @@ window.KuBi.caseForAppointment = function (appt) {
 };
 
 /**
- * Stage by stage, as it stands. Today's appointment wins where there is
- * one, because that is the live record staff are moving; otherwise the
- * case's own last known progress is used. Never both.
+ * Stages this case finished on EARLIER days, by the stable (English) name.
+ *
+ * Three sources, all already recorded: stages imported with the case
+ * (stagesDone), stages its history says were completed, and visits KuBi
+ * itself kept — a visit only counts once it was finished AND written up.
+ */
+window.KuBi.casePastStagesDone = function (caseId) {
+  const c = window.KuBi.caseById(caseId);
+  if (!c) return {};
+  const done = {};
+  (c.stagesDone || []).forEach(function (n) {
+    done[n] = true;
+  });
+  (c.history || []).forEach(function (h) {
+    if (h.kind === 'stageCompleted' && h.stage) done[h.stage] = true;
+  });
+  (window.KuBi.pastVisits ? window.KuBi.pastVisits(caseId) : []).forEach(function (v) {
+    if (window.KuBi.visitCompletesStage(v)) done[v.stage] = true;
+  });
+  return done;
+};
+
+/**
+ * Stage by stage, as it stands. Today's appointment supplies today's live
+ * progress; what earlier days finished is added to it, because an
+ * appointment record can lag behind what actually happened — and a stage
+ * that was finished and written up on Tuesday is finished, whatever
+ * Wednesday's booking still says.
  */
 window.KuBi.caseStageList = function (caseId, appointments, lang) {
   const c = window.KuBi.caseById(caseId);
   if (!c) return [];
   const appt = window.KuBi.appointmentForCase(caseId, appointments);
+  const past = window.KuBi.casePastStagesDone(caseId);
 
   // NAMES come from the procedure's template — that is the point of a
   // template — unless this case carries its own list, which a combined
   // plan legitimately does (an implant case that spans surgery AND the
   // prosthesis is not the standard three stages of either).
   const names = c.stages && c.stages.length ? c.stages : window.KuBi.templateStages(c.procedureType, lang);
+  // The stable names, which is what past records are kept under; the
+  // displayed ones may be translated.
+  const keys = c.stages && c.stages.length ? c.stages : window.KuBi.templateStages(c.procedureType);
+
+  // Only one stage is "now": the first one not done. If the appointment
+  // marked a stage current that earlier days have since finished, the
+  // current marker moves on rather than pointing at finished work.
+  function settle(list) {
+    const anyCurrentOpen = list.some(function (s) {
+      return s.current && !s.done;
+    });
+    let taken = false;
+    return list.map(function (s) {
+      let current = anyCurrentOpen ? s.current && !s.done : !s.done && !taken;
+      if (current) {
+        if (taken) current = false;
+        taken = true;
+      }
+      return {
+        name: s.name,
+        done: s.done,
+        current: current
+      };
+    });
+  }
 
   // PROGRESS comes from today's appointment when there is one. Positions
   // are only trusted when the two agree on how many stages there are;
@@ -39544,37 +39894,29 @@ window.KuBi.caseStageList = function (caseId, appointments, lang) {
   // guessing an alignment would silently mislabel someone's treatment.
   if (appt && appt.caseStages && appt.caseStages.length) {
     if (names.length === appt.caseStages.length) {
-      return appt.caseStages.map(function (st, i) {
+      return settle(appt.caseStages.map(function (st, i) {
         return {
           name: names[i],
-          done: !!st.done,
+          done: !!st.done || !!past[keys[i]],
           current: !!st.current
         };
-      });
+      }));
     }
-    return appt.caseStages.map(function (st) {
+    return settle(appt.caseStages.map(function (st) {
       return {
         name: st.name,
-        done: !!st.done,
+        done: !!st.done || !!past[st.name],
         current: !!st.current
       };
-    });
+    }));
   }
-  const done = c.stagesDone || [];
-  let currentTaken = false;
-  return names.map(function (name, i) {
-    // stagesDone is recorded against the English name, which is the stable
-    // one; the displayed name may be translated.
-    const key = c.stages && c.stages.length ? name : window.KuBi.templateStages(c.procedureType)[i];
-    const isDone = done.indexOf(key) !== -1;
-    const isCurrent = !isDone && !currentTaken;
-    if (isCurrent) currentTaken = true;
+  return settle(names.map(function (name, i) {
     return {
       name: name,
-      done: isDone,
-      current: isCurrent
+      done: !!past[keys[i]],
+      current: false
     };
-  });
+  }));
 };
 
 /** Where the case has reached: what is finished, what is now, what is next. */
@@ -39600,6 +39942,110 @@ window.KuBi.caseProgress = function (caseId, appointments, lang) {
     visitsDone: completed.length,
     visitsTotal: stages.length,
     allStagesDone: stages.length > 0 && completed.length === stages.length
+  };
+};
+
+// ---- visits, across days ----------------------------------------------
+
+/**
+ * Every visit the case has had, numbered, oldest first:
+ *
+ *   Visit 1 · 12 Sep · Case opened
+ *   Visit 2 · 14 Sep · Cleaning
+ *   Visit 3 · today  · Cleaning / medication
+ *
+ * A visit is a DAY the patient came in for this case. Earlier days come
+ * from the case's own history and from visits KuBi kept; today's is read
+ * live. Nobody numbers anything — the count is the dates.
+ */
+window.KuBi.caseVisitList = function (caseId, ctx) {
+  const c = window.KuBi.caseById(caseId);
+  if (!c) return [];
+  const context = ctx || {};
+  const today = window.KuBi.operatingDate();
+  const byDate = {};
+
+  // Imported history: one visit per date, named for the stage it finished
+  // when it finished one.
+  (c.history || []).forEach(function (h) {
+    if (!h.on || h.on >= today) return;
+    const v = byDate[h.on] || (byDate[h.on] = {
+      on: h.on,
+      stage: null,
+      by: h.by || null,
+      completed: true,
+      documented: true,
+      source: 'history'
+    });
+    if (h.kind === 'stageCompleted' && h.stage) v.stage = h.stage;
+    if (h.kind === 'caseOpened' && !v.stage) v.opened = true;
+  });
+
+  // Visits KuBi kept. Where a date is in both, KuBi's own record wins: it
+  // has the times.
+  window.KuBi.pastVisits(caseId).forEach(function (r) {
+    byDate[r.date] = {
+      on: r.date,
+      stage: r.stage,
+      by: r.doctor || r.documentedBy || null,
+      completed: !!r.completedAt,
+      documented: !!r.documentedAt,
+      source: 'kept'
+    };
+  });
+
+  // Today, live.
+  const appt = window.KuBi.appointmentForCase(caseId, context.appointments);
+  if (appt) {
+    const live = window.KuBi.visitsFromDay(today, [appt], context.procedureState, context.closedCases)[0];
+    if (live && live.attended) {
+      byDate[today] = {
+        on: today,
+        stage: live.stage,
+        by: appt.doctor || null,
+        today: true,
+        completed: !!live.completedAt,
+        documented: !!live.documentedAt,
+        source: 'today'
+      };
+    }
+  }
+  return Object.keys(byDate).sort().map(function (d, i) {
+    return Object.assign({
+      n: i + 1
+    }, byDate[d]);
+  });
+};
+
+/**
+ * The visit that comes next: its number, the stage it is for, and whether
+ * the patient is booked for it. A closed case has no next visit — what
+ * follows it is a follow-up, which is a different thing.
+ */
+window.KuBi.caseNextVisit = function (caseId, ctx) {
+  const context = ctx || {};
+  if (window.KuBi.caseClosure(caseId, context).caseClosed) return null;
+  const visits = window.KuBi.caseVisitList(caseId, context);
+  const progress = window.KuBi.caseProgress(caseId, context.appointments, context.lang);
+  // A patient booked in today is having today's stage today, so the NEXT
+  // visit is for the stage after it. With nobody booked today (or a
+  // no-show), the stage the case is on is still waiting for its visit.
+  const appt = window.KuBi.appointmentForCase(caseId, context.appointments);
+  const todayCounts = !!appt && appt.status !== 'no_show';
+  const stage = todayCounts ? progress.next : progress.current;
+  if (!stage) return null;
+  const todayListed = visits.length && visits[visits.length - 1].today;
+  const today = window.KuBi.operatingDate();
+  const booking = (window.KuBi.UPCOMING || []).filter(function (u) {
+    return u.caseId === caseId && u.date > today;
+  }).sort(function (a, b) {
+    return a.date.localeCompare(b.date);
+  })[0] || null;
+  const n = visits.length + (todayCounts && !todayListed ? 2 : 1);
+  return {
+    n: n,
+    stage: stage,
+    bookedFor: booking ? booking.date : null
   };
 };
 
@@ -39706,6 +40152,33 @@ window.KuBi.caseTimeline = function (caseId, ctx) {
     }
   }
 
+  // Earlier days KuBi kept. The visit, as it happened: finished, and
+  // written up — or, honestly, not.
+  window.KuBi.pastVisits(caseId).forEach(function (r) {
+    if (r.completedAt) out.push({
+      on: r.date,
+      kind: 'visitCompleted',
+      by: r.doctor || null,
+      stage: r.stage
+    });else out.push({
+      on: r.date,
+      kind: 'visitStarted',
+      by: r.doctor || null,
+      stage: r.stage
+    });
+    if (r.documentedAt) out.push({
+      on: r.date,
+      kind: 'visitDocumented',
+      by: r.documentedBy || null,
+      stage: r.stage
+    });else if (r.completedAt) out.push({
+      on: r.date,
+      kind: 'visitNotDocumented',
+      by: null,
+      stage: r.stage
+    });
+  });
+
   // Lab movements belong to the case, whichever visit booked them.
   window.KuBi.caseLab(caseId, context.labReceived).forEach(function (l) {
     // The lab is where it went, not who did it — `by` would read as though
@@ -39731,13 +40204,16 @@ window.KuBi.caseTimeline = function (caseId, ctx) {
     return String(a.on).localeCompare(String(b.on));
   });
 
-  // What has not happened yet, so the timeline points forward.
-  const progress = window.KuBi.caseProgress(caseId, context.appointments, context.lang);
-  if (progress.current || progress.next) {
+  // What has not happened yet, so the timeline points forward — and says
+  // whether anybody has booked it, which is the question front desk has.
+  const nextVisit = window.KuBi.caseNextVisit(caseId, context);
+  if (nextVisit) {
     out.push({
       ahead: true,
       kind: 'nextStage',
-      stage: progress.next || progress.current
+      stage: nextVisit.stage,
+      visit: nextVisit.n,
+      bookedFor: nextVisit.bookedFor
     });
   }
   return out;
@@ -39785,6 +40261,8 @@ window.KuBi.caseThread = function (caseId, ctx) {
     progress: window.KuBi.caseProgress(caseId, context.appointments, context.lang),
     lab: window.KuBi.caseLab(caseId, context.labReceived),
     timeline: window.KuBi.caseTimeline(caseId, context),
+    visits: window.KuBi.caseVisitList(caseId, context),
+    nextVisit: window.KuBi.caseNextVisit(caseId, context),
     closure: window.KuBi.caseClosure(caseId, context),
     state: window.KuBi.caseState(caseId, context)
   };
@@ -40803,6 +41281,25 @@ window.KuBi.historySync = function () {
           ok: true,
           rev: json.rev
         };
+      });
+    },
+    // ---- visits, one small row per case per date ----------------------
+    // null means unreachable; an empty array means the tab holds nothing.
+    visitsAll: function () {
+      return request({
+        action: 'caseVisitsAll'
+      }).then(function (json) {
+        return json && Array.isArray(json.rows) ? json.rows : null;
+      });
+    },
+    visitPut: function (visit) {
+      return request({
+        action: 'caseVisitPut',
+        body: {
+          visit: visit
+        }
+      }).then(function (json) {
+        return !!json;
       });
     },
     /** What copies exist for a date, newest first. */
@@ -42428,7 +42925,7 @@ window.KuBi.Patients = function Patients({
       className: "case-stage-next"
     }, thread.progress.next || '—'))), /*#__PURE__*/React.createElement("div", {
       className: "case-status-label case-visits-label"
-    }, t('case.visits', lang), " ", thread.progress.visitsDone, " / ", thread.progress.visitsTotal), /*#__PURE__*/React.createElement("ul", {
+    }, t('case.stages', lang), " ", thread.progress.visitsDone, " / ", thread.progress.visitsTotal), /*#__PURE__*/React.createElement("ul", {
       className: "case-visit-list"
     }, thread.progress.stages.map(function (st, i) {
       return /*#__PURE__*/React.createElement("li", {
@@ -42440,6 +42937,35 @@ window.KuBi.Patients = function Patients({
         className: "case-visit-name"
       }, st.name));
     })), /*#__PURE__*/React.createElement("div", {
+      className: "case-status-block case-visits-block"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "card-title"
+    }, t('visit.title', lang)), thread.visits.length === 0 && !thread.nextVisit ? /*#__PURE__*/React.createElement("p", {
+      className: "module-sub"
+    }, t('visit.none', lang)) : /*#__PURE__*/React.createElement("ol", {
+      className: "visit-list"
+    }, thread.visits.map(function (v) {
+      const what = v.stage || (v.opened ? t('visit.opened', lang) : '—');
+      const how = v.today ? v.completed ? t('visit.finished', lang) : t('visit.inProgress', lang) : v.completed && !v.documented ? t('visit.notWrittenUp', lang) : null;
+      return /*#__PURE__*/React.createElement("li", {
+        key: v.on,
+        className: 'visit-row' + (v.today ? ' visit-today' : '') + (v.completed && !v.documented && !v.today ? ' visit-warn' : '')
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "visit-n"
+      }, t('visit.n', lang), " ", v.n), /*#__PURE__*/React.createElement("span", {
+        className: "visit-when mono"
+      }, v.today ? t('visit.today', lang) : v.on), /*#__PURE__*/React.createElement("span", {
+        className: "visit-what"
+      }, what, how ? ' · ' + how : ''));
+    }), thread.nextVisit ? /*#__PURE__*/React.createElement("li", {
+      className: 'visit-row visit-next' + (thread.nextVisit.bookedFor ? '' : ' visit-unbooked')
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "visit-n"
+    }, t('visit.n', lang), " ", thread.nextVisit.n), /*#__PURE__*/React.createElement("span", {
+      className: "visit-when"
+    }, t('visit.next', lang)), /*#__PURE__*/React.createElement("span", {
+      className: "visit-what"
+    }, thread.nextVisit.stage, " \xB7 ", thread.nextVisit.bookedFor ? t('visit.bookedFor', lang) + ' ' + thread.nextVisit.bookedFor : t('visit.notBooked', lang))) : null)), /*#__PURE__*/React.createElement("div", {
       className: "case-status-row"
     }, /*#__PURE__*/React.createElement("span", {
       className: "case-status-label"
@@ -42486,7 +43012,9 @@ window.KuBi.Patients = function Patients({
       } else if (e.kind === 'labSent' || e.kind === 'labReceived') {
         label = (e.item ? (e.item[lang] || e.item.en) + ' ' : '') + t('timeline.' + e.kind, lang);
       } else if (e.kind === 'nextStage') {
-        label = e.stage;
+        // Forward-looking, so it says the one thing front desk needs:
+        // is anybody booked for it.
+        label = e.stage + ' · ' + (e.bookedFor ? t('visit.bookedFor', lang) + ' ' + e.bookedFor : t('visit.notBooked', lang));
       } else {
         label = (e.stage ? e.stage + ' ' : '') + t('timeline.' + e.kind, lang);
       }
@@ -44353,6 +44881,29 @@ function useClinicDay() {
       clearInterval(timer);
     };
   }, []);
+
+  // ---- the case outlives the day ----------------------------------------
+  // Each case visit is read off the day as it happens and kept, so tomorrow
+  // the case still knows what today did to it. Nothing is entered for this.
+  //
+  // Same first rule as the day: never write before reading. Until the day
+  // has come back from the sheet, the state on screen is seed data, and a
+  // visit recorded from seed data would be a visit that never happened.
+  const [, setVisitsSeen] = React.useState(0);
+  React.useEffect(function () {
+    const store = window.KuBi.caseVisitStore;
+    const off = store.subscribe(function () {
+      setVisitsSeen(function (n) {
+        return n + 1;
+      });
+    });
+    store.hydrate();
+    return off;
+  }, []);
+  React.useEffect(function () {
+    if (window.KuBi.historySync.isConfigured() && !armed.current) return;
+    window.KuBi.caseVisitStore.recordDay(window.KuBi.operatingDate(), appointments, procedureState, closedCases);
+  }, [appointments, procedureState, closedCases, saveState.status]);
 
   // The day, plus whether it is actually reaching the sheet.
   day.saveState = saveState;

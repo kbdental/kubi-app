@@ -225,6 +225,28 @@ check('a day with no copies answers cleanly',
 check('asking for a copy that is not there answers cleanly',
       get('dayBackupGet', { date: '2020-01-01', rev: 9 }).backup === null);
 
+// ---- case visits: one row per case per date ----
+const V = { caseId: 'AP0311-RCT_MOLAR-01', date: '2026-09-18', stage: 'Cleaning / medication',
+            apptId: 'A1', doctor: 'Dr. Ananya Rao', attended: true,
+            startedAt: '2026-09-18T04:00:00.000Z', completedAt: '2026-09-18T05:00:00.000Z',
+            documentedAt: null, documentedBy: null };
+check('the visits tab starts empty', get('caseVisitsAll').rows.length === 0);
+const vput = post('caseVisitPut', { visit: V });
+check('a visit is stored under caseId|date', vput.status === 'ok' && vput.key === V.caseId + '|' + V.date);
+post('caseVisitPut', { visit: Object.assign({}, V, { documentedAt: '2026-09-18T05:30:00.000Z', documentedBy: 'Dr. Ananya Rao' }) });
+const vrows = get('caseVisitsAll').rows;
+check('the same visit told twice is ONE row, updated',
+      vrows.length === 1 && vrows[0].documentedBy === 'Dr. Ananya Rao', vrows.length + ' row(s)');
+check('a visit reads back as it was sent',
+      vrows[0].caseId === V.caseId && vrows[0].date === V.date && vrows[0].stage === V.stage &&
+      vrows[0].attended === true && vrows[0].completedAt === V.completedAt &&
+      vrows[0].key === V.caseId + '|' + V.date && vrows[0].startedAt === V.startedAt);
+post('caseVisitPut', { visit: Object.assign({}, V, { date: '2026-09-19' }) });
+check('another day is another row', get('caseVisitsAll').rows.length === 2);
+check('a visit with no case is refused', post('caseVisitPut', { visit: { date: '2026-09-19' } }).status === 'error');
+check('the visits tab holds no patient names',
+      VISIT_HEADERS.indexOf('patient') === -1 && !('patient' in get('caseVisitsAll').rows[0]));
+
 // ---- summary ----
 const failed = results.filter(r => !r.pass);
 console.log('\n================================');

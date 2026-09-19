@@ -17,6 +17,7 @@ module.exports = [
   'src/inventory.js',
   'src/treatmentTemplates.js',
   'src/followUp.js',
+  'src/caseVisits.js',
   'src/cases.js',
   'src/nextAction.js',
   'src/mis.js',

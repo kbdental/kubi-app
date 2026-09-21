@@ -55,7 +55,11 @@ global.ContentService = { MimeType: { JSON: 'json' },
 global.Logger = { log() {} };
 
 // ---- the two other apps ----------------------------------------------
-const TODAY = '2026-09-19';
+// Dates relative to the real today: gatewayCheck() and the feed ask for
+// "today" by the clock, so a fixed date here would break the day after it.
+const D = n => { const x = new Date(Date.now() + n * 86400000); const p = v => String(v).padStart(2, '0');
+                 return x.getFullYear() + '-' + p(x.getMonth() + 1) + '-' + p(x.getDate()); };
+const TODAY = D(0);
 const MGMT = 'https://mgmt.example/exec', INV = 'https://inv.example/exec', CLIN = 'https://clin.example/exec';
 props.MGMT_URL = MGMT; props.MGMT_INV_URL = INV; props.CLINICAL_URL = CLIN;
 
@@ -78,10 +82,10 @@ const mgmtSheets = {
   Attendance: [
     { id: 'a1', staffId: 'S1', staffName: 'Priya Sharma', date: TODAY, checkIn: '08:55', checkOut: null, lateMin: 0, locIn: '28.6,77.2' },
     { id: 'a2', staffId: 'S2', staffName: 'Nisha Verma', date: TODAY, checkIn: '09:22', lateMin: 22, lateTag: 'Late' },
-    { id: 'a3', staffId: 'S1', staffName: 'Priya Sharma', date: '2026-09-18', checkIn: '08:50' },
+    { id: 'a3', staffId: 'S1', staffName: 'Priya Sharma', date: D(-1), checkIn: '08:50' },
   ],
   LeaveRequests: [
-    { staffName: 'Kiran Bose', from: '2026-09-18', to: '2026-09-20', status: 'Approved', type: 'Casual' },
+    { staffName: 'Kiran Bose', from: D(-1), to: D(1), status: 'Approved', type: 'Casual' },
     { staffName: 'Someone', from: TODAY, to: TODAY, status: 'Pending', type: 'Casual' },
   ],
   TaskCompletions: [
@@ -108,7 +112,7 @@ const invSheets = {
   SterilisationLoads: [
     { id: 'L1', at: TODAY + 'T08:10:00', cycle: '134°C', result: 'Released', packExpiry: '2026-10-19', items: JSON.stringify([{ type: 'set', id: 's1' }, { type: 'set', id: 's2' }]) },
     { id: 'L2', at: TODAY + 'T08:40:00', cycle: '134°C', result: 'Void' },
-    { id: 'L3', at: '2026-08-01T08:40:00', cycle: '134°C', result: 'Released' },
+    { id: 'L3', at: D(-49) + 'T08:40:00', cycle: '134°C', result: 'Released' },
   ],
 };
 const clinical = {
@@ -121,7 +125,7 @@ const clinical = {
       doctor: 'Dr. Viveyk Mittel', chair: 'Chair 2', status: 'Checked In', checkinTime: '10:05' },
     { id: 'APT-3', date: TODAY, uhid: 'U3', patientName: 'Gone Away', time: '11:00', type: 'Scaling',
       status: 'Cancelled' },
-    { id: 'APT-4', date: '2026-09-22', uhid: 'U1', patientName: 'Arjun Prasad', time: '09:30', type: 'RCT',
+    { id: 'APT-4', date: D(3), uhid: 'U1', patientName: 'Arjun Prasad', time: '09:30', type: 'RCT',
       status: 'Scheduled', caseId: 'CASE-1' },
   ],
   cases: { 'CASE-1': { success: true, caseId: 'CASE-1', procedureName: 'Root canal', caseStatus: 'Open',
@@ -164,9 +168,9 @@ global.UrlFetchApp = { fetch(url, o) {
     if (p.action === 'getCaseState') return reply(clinical.cases[p.caseId] || { success: false, error: 'Case not found' });
     if (p.action === 'getFollowUps' && clinical.followUpsDown) return reply({}, 502);
     if (p.action === 'getFollowUps') return reply({ success: true,
-      postTreatment: [{ uhid: 'U9', name: 'Sanjay Bhatt', mobile: '9811100000', procedure: 'Extraction review', treatmentDate: '2026-09-12', dueDate: '2026-09-19', overdueDays: 0 }],
+      postTreatment: [{ uhid: 'U9', name: 'Sanjay Bhatt', mobile: '9811100000', procedure: 'Extraction review', treatmentDate: D(-7), dueDate: TODAY, overdueDays: 0 }],
       recall: [{ uhid: 'U8', name: 'Leela Menon', mobile: '9811100001', lastVisit: '2026-01-02', daysSince: 260 }],
-      missed: [{ uhid: 'U7', name: 'Rohan Gupta', mobile: '9811100002', date: '2026-09-17', status: 'No Show', type: 'Consultation' }] });
+      missed: [{ uhid: 'U7', name: 'Rohan Gupta', mobile: '9811100002', date: D(-2), status: 'No Show', type: 'Consultation' }] });
     if (p.action === 'getDoctorsList') return reply({ success: true, doctors: ['Dr. Viveyk Mittel', 'Dr. Manika Mittel'] });
     if (p.action === 'getChairsList') return reply({ success: true, chairs: ['Chair 1', 'Chair 2', 'Chair 3', 'Chair 4'] });
     return reply({ success: false, error: 'unknown action' });
@@ -250,14 +254,14 @@ check('the chair is a number KuBi can use', ap1.chair === 1);
 check('the time the status changed comes across, so waits age honestly',
       feed.appointments.find(a => a.id === 'APT-2').statusTime === '10:05');
 check('the week ahead comes separately, for "is the next visit booked"',
-      feed.upcoming.length === 1 && feed.upcoming[0].caseId === 'CASE-1' && feed.upcoming[0].date === '2026-09-22');
+      feed.upcoming.length === 1 && feed.upcoming[0].caseId === 'CASE-1' && feed.upcoming[0].date === D(3));
 check('the case for today\'s patient comes with its stages',
       feed.cases['CASE-1'] && feed.cases['CASE-1'].stages.length === 2 &&
       feed.cases['CASE-1'].stages[0].status === 'completed' && feed.cases['CASE-1'].nextStageName === 'Obturation');
 
 // Follow-ups
 check('post-treatment check-ins become follow-ups',
-      feed.followUps.length === 1 && feed.followUps[0].patient === 'Sanjay Bhatt' && feed.followUps[0].due === '2026-09-19');
+      feed.followUps.length === 1 && feed.followUps[0].patient === 'Sanjay Bhatt' && feed.followUps[0].due === TODAY);
 check('recalls and missed appointments come across too',
       feed.recall.length === 1 && feed.missed.length === 1);
 check('doctors and chairs come from the Clinical Suite', feed.doctors.length === 2 && feed.chairs.length === 4);
@@ -396,6 +400,42 @@ check('gatewayCheck names a mistyped property, without showing its value',
 delete props.MGMT_Token;
 check('a role assigned twice is counted once',
       feed.staff.find(s => s.name === 'Suresh Kumar').roleCodes.filter(c => c === 'STT').length === 1);
+
+// ---- people not in the Management Suite yet ------------------------------
+Object.keys(cache).forEach(k => delete cache[k]);
+props.KUBI_STAFF_1 = 'Dr. Manika Mittel | dentist | 5678';
+props.KUBI_STAFF_2 = 'Dr. Viveyk Mittel | owner | 1212';     // IS in the Management Suite
+props.KUBI_STAFF_3 = 'Somebody without a pin | owner';
+const withExtra = get('feed', { date: TODAY });
+const manika = withExtra.staff.find(s => s.name === 'Dr. Manika Mittel');
+check('someone only on the KuBi list appears in the staff list',
+      manika && manika.role === 'associate_dentist' && manika.source === 'kubi');
+check('...with no PIN in the feed', JSON.stringify(withExtra).indexOf('5678') === -1 && JSON.stringify(withExtra).indexOf('1212') === -1);
+check('someone in both lists appears once, as the Management Suite has them',
+      withExtra.staff.filter(s => s.name === 'Dr. Viveyk Mittel').length === 1 &&
+      withExtra.staff.find(s => s.name === 'Dr. Viveyk Mittel').source === 'management');
+check('an unreadable line adds nobody', !withExtra.staff.some(s => /without a pin/.test(s.name)));
+const okManika = si('Dr. Manika Mittel', '5678');
+check('the KuBi-list PIN signs them in', okManika.ok === true && okManika.person.role === 'associate_dentist' &&
+      okManika.person.source === 'kubi' && JSON.stringify(okManika).indexOf('5678') === -1);
+check('...a wrong one does not', si('Dr. Manika Mittel', '0000').reason === 'wrongPin');
+check('once someone is in the Management Suite, their KuBi-list PIN stops working',
+      si('Dr. Viveyk Mittel', '1212').ok === false && si('Dr. Viveyk Mittel', '0000').ok === true);
+mgmtDown = true;
+check('Management Suite down: someone on the KuBi list can still sign in',
+      si('Dr. Manika Mittel', '5678').ok === true);
+check('...while Management staff are told it cannot be reached, not that their PIN is wrong',
+      si('Priya Sharma', '1111').reason === 'unreachable');
+mgmtDown = false;
+for (let i = 0; i < SIGNIN_MAX_TRIES; i++) si('Dr. Manika Mittel', '0001');
+check('the KuBi list is locked after five wrong tries too', si('Dr. Manika Mittel', '5678').reason === 'locked');
+now += (SIGNIN_LOCK_SEC + 1) * 1000;
+logged.length = 0;
+gatewayCheck();
+check('gatewayCheck counts the KuBi list and names a line it cannot read, without its content',
+      logged.some(l => /KuBi-only staff: 2 — could not read KUBI_STAFF_3/.test(l)) &&
+      !logged.some(l => /5678|1212|without a pin/.test(l)), logged.find(l => /KuBi-only/.test(l)));
+delete props.KUBI_STAFF_1; delete props.KUBI_STAFF_2; delete props.KUBI_STAFF_3;
 
 // ---- summary --------------------------------------------------------------
 const failed = results.filter(r => !r.pass);

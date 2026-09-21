@@ -33,7 +33,7 @@
  * Then Deploy → Manage deployments → ✏️ → New version. The URL stays the same.
  */
 
-var GATEWAY_VERSION = 2;
+var GATEWAY_VERSION = 3;
 
 var GATEWAY_DEFAULTS = {
   MGMT_URL: 'https://script.google.com/macros/s/AKfycbxfxWxPM4kk4Fa242Ewj2T9ktPsn3irBZjAxhWHCaEZkA0CG1ULBZED7PZWVD22cyDO/exec',
@@ -261,6 +261,7 @@ function shapeStaff_(rows, roleEmp) {
       roleCodes: codes,
       role: kubiRole,                      // null: not a KuBi user
       active: !(status === 'inactive' || status === 'left' || status === 'resigned' || status === 'exited'),
+      source: 'management',
     };
   });
 }
@@ -481,6 +482,9 @@ function gatewayFeed_(date) {
    'appointments', 'upcoming', 'followUps', 'recall', 'missed', 'doctors', 'chairs', 'casesMissing']
     .forEach(function (k) { if (!out[k]) out[k] = []; });
   if (!out.cases) out.cases = {};
+  // People not in the Management Suite yet. Read fresh every time, never
+  // cached, so a line added in Script Properties counts at once.
+  out.staff = gwAllStaff_(out.staff);
   return out;
 }
 
@@ -506,12 +510,31 @@ function gatewaySignIn_(name, pin) {
   var tries = Number(cache.get(lockKey) || 0);
   if (tries >= SIGNIN_MAX_TRIES) return { status: 'ok', ok: false, reason: 'locked', waitSec: SIGNIN_LOCK_SEC };
 
-  var m = mgmtRead_(gwProp_('MGMT_URL'), ['Staff', 'RoleEmployees', 'ClinicSettings']);
-  if (m.error) return { status: 'ok', ok: false, reason: 'unreachable', error: m.error };
+  function refuse() {
+    cache.put(lockKey, String(tries + 1), SIGNIN_LOCK_SEC);
+    return { status: 'ok', ok: false, reason: 'wrongPin' };
+  }
+  function welcome(p) {
+    cache.remove(lockKey);
+    return { status: 'ok', ok: true, person: { id: p.id, name: p.name, designation: p.designation,
+             role: p.role, source: p.source || 'management' } };
+  }
 
-  var person = shapeStaff_(m.data.Staff, m.data.RoleEmployees)
+  var m = mgmtRead_(gwProp_('MGMT_URL'), ['Staff', 'RoleEmployees', 'ClinicSettings']);
+  var person = m.error ? null : shapeStaff_(m.data.Staff, m.data.RoleEmployees)
     .filter(function (s) { return gwNorm_(s.name) === who; })[0];
-  if (!person || !person.active) return { status: 'ok', ok: false, reason: 'unknown' };
+
+  // Not in the Management Suite (yet): the KUBI_STAFF list, which exists
+  // for exactly the people who have not been entered there. Someone who IS
+  // in the Management Suite always signs in with that PIN — the moment
+  // they are added there, their KuBi-only line stops counting.
+  if (!person) {
+    var extra = gwExtraStaff_().people.filter(function (s) { return gwNorm_(s.name) === who; })[0];
+    if (extra) return extra.pin === pin ? welcome(extra) : refuse();
+    if (m.error) return { status: 'ok', ok: false, reason: 'unreachable', error: m.error };
+    return { status: 'ok', ok: false, reason: 'unknown' };
+  }
+  if (!person.active) return { status: 'ok', ok: false, reason: 'unknown' };
 
   // The newest rolePins setting wins, as in the Management Suite.
   var pins = {};
@@ -528,14 +551,52 @@ function gatewaySignIn_(name, pin) {
     return expected && expected === pin;
   });
 
-  if (!matched.length) {
-    cache.put(lockKey, String(tries + 1), SIGNIN_LOCK_SEC);
-    return { status: 'ok', ok: false, reason: 'wrongPin' };
-  }
-  cache.remove(lockKey);
-  if (!person.role) return { status: 'ok', ok: false, reason: 'noKubiRole' };
-  return { status: 'ok', ok: true, person: { id: person.id, name: person.name,
-           designation: person.designation, role: person.role } };
+  if (!matched.length) return refuse();
+  if (!person.role) { cache.remove(lockKey); return { status: 'ok', ok: false, reason: 'noKubiRole' }; }
+  return welcome(person);
+}
+
+// ── people not in the Management Suite yet ────────────────────────────
+// One Script Property per person, in words the owner can type:
+//
+//     KUBI_STAFF_1   Dr. Viveyk Mittel | owner | 4321
+//
+// The PIN lives here, on the server, like the Management PINs — it never
+// reaches KuBi.html. Lines that cannot be read are reported by
+// gatewayCheck (by property name, never by content) rather than guessed.
+var EXTRA_ROLE_WORDS = {
+  'owner': 'owner_admin', 'admin': 'owner_admin',
+  'lead dentist': 'lead_dentist', 'dentist': 'associate_dentist', 'associate dentist': 'associate_dentist',
+  'manager': 'clinic_manager', 'clinic manager': 'clinic_manager',
+  'assistant': 'lead_dental_assistant', 'dental assistant': 'lead_dental_assistant', 'nurse': 'lead_dental_assistant',
+  'sterilisation': 'sterilization_technician', 'sterilization': 'sterilization_technician',
+  'front desk': 'front_desk_receptionist', 'reception': 'front_desk_receptionist', 'receptionist': 'front_desk_receptionist',
+  'housekeeping': 'house_keeping', 'house keeping': 'house_keeping',
+  'mis': 'mis',
+};
+
+function gwExtraStaff_() {
+  var all = PropertiesService.getScriptProperties().getProperties();
+  var people = [], unreadable = [];
+  Object.keys(all).filter(function (k) { return /^KUBI_STAFF/i.test(k); }).sort().forEach(function (k) {
+    var parts = String(all[k]).split('|').map(function (x) { return x.trim(); });
+    var role = EXTRA_ROLE_WORDS[gwNorm_(parts[1])];
+    if (parts.length !== 3 || !parts[0] || !role || !/^\d{4}$/.test(parts[2])) { unreadable.push(k); return; }
+    people.push({ id: 'kubi:' + gwNorm_(parts[0]), name: parts[0], designation: parts[1],
+                  role: role, pin: parts[2], source: 'kubi', active: true, roleCodes: [] });
+  });
+  return { people: people, unreadable: unreadable };
+}
+
+/** The staff list KuBi shows: the Management Suite's, plus anyone only on the KuBi list. No PINs. */
+function gwAllStaff_(mgmtStaff) {
+  var have = {};
+  (mgmtStaff || []).forEach(function (s) { have[gwNorm_(s.name)] = true; });
+  var extra = gwExtraStaff_().people.filter(function (p) { return !have[gwNorm_(p.name)]; }).map(function (p) {
+    return { id: p.id, name: p.name, designation: p.designation, roleCodes: [], role: p.role,
+             active: true, source: 'kubi' };
+  });
+  return (mgmtStaff || []).concat(extra);
 }
 
 /** Called from doGet/doPost in KuBi_History.gs. null = not a gateway action. */
@@ -561,8 +622,12 @@ function gatewayCheck() {
   var known = { MGMT_URL: 1, MGMT_TOKEN: 1, MGMT_INV_URL: 1, CLINICAL_URL: 1, CLINICAL_PASSWORD: 1 };
   var names = Object.keys(PropertiesService.getScriptProperties().getProperties());
   Logger.log('Script properties: ' + (names.length ? names.map(function (n) {
-    return n + (known[n] ? '' : ' (not a name the gateway reads)');
+    return n + (known[n] || /^KUBI_STAFF/.test(n) ? '' : ' (not a name the gateway reads)');
   }).join(', ') : 'none'));
+  var ex = gwExtraStaff_();
+  Logger.log('KuBi-only staff: ' + ex.people.length +
+             (ex.unreadable.length ? ' — could not read ' + ex.unreadable.join(', ') +
+              ' (write it as: Name | role | 4-digit PIN)' : ''));
   gatewayForget_(gwDate_(new Date()));
   var f = gatewayFeed_(gwDate_(new Date()));
   Object.keys(f.sources).forEach(function (k) {

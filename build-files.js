@@ -25,6 +25,8 @@ module.exports = [
   'src/mergeDay.js',
   'src/sheetsSync.js',
   'src/history.js',
+  // After every data module and the transport: it replaces their demo data.
+  'src/clinicFeed.js',
   'src/EmployeeMaster.jsx',
   'src/AttendanceModule.jsx',
   'src/Today.jsx',

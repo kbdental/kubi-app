@@ -148,6 +148,13 @@
   .st-present { background: rgba(46,125,91,0.12); color: var(--green); }
   .st-late { background: rgba(193,80,46,0.12); color: var(--coral); }
   .st-absent { background: rgba(24,35,32,0.08); color: var(--ink-soft); }
+  .st-leave { background: rgba(33,105,168,0.10); color: var(--teal); }
+  .status-readonly { display: inline-block; cursor: default; }
+  .feed-warning {
+    background: rgba(193,80,46,0.10); color: var(--coral); font-weight: 600; font-size: 13px;
+    padding: 8px 20px; border-bottom: 1px solid rgba(193,80,46,0.25);
+  }
+  .login-name { margin-bottom: 12px; }
 
   .empty-state { color: var(--ink-soft); font-size: 14px; padding: 40px 0; text-align: center; }
 
@@ -881,7 +888,7 @@
 
 <script>
   window.KuBi = window.KuBi || {};
-  window.KuBi.BUILD_STAMP = 'Build: 21 Sept 2026, 10:54 am';
+  window.KuBi.BUILD_STAMP = 'Build: 21 Sept 2026, 11:29 am';
 </script>
 <script>
   // Show a readable message if something fails to load.
@@ -34568,6 +34575,10 @@ window.KuBi.STRINGS = {
     en: 'Started, not finished',
     hi: 'शुरू किया, पूरा नहीं'
   },
+  'lapsed.recall': {
+    en: 'Due for a recall visit',
+    hi: 'रीकॉल विज़िट बाकी है'
+  },
   'lapsed.lastSeen': {
     en: 'Last seen',
     hi: 'आखिरी बार आए'
@@ -35231,6 +35242,86 @@ window.KuBi.STRINGS = {
   'topbar.signOut': {
     en: 'Sign out',
     hi: 'साइन आउट'
+  },
+  'login.yourName': {
+    en: 'Your name',
+    hi: 'आपका नाम'
+  },
+  'login.pickName': {
+    en: 'Choose your name',
+    hi: 'अपना नाम चुनें'
+  },
+  'login.checking': {
+    en: 'Checking…',
+    hi: 'जांच हो रही है…'
+  },
+  'login.connecting': {
+    en: 'Connecting to the clinic…',
+    hi: 'क्लिनिक से जुड़ रहे हैं…'
+  },
+  'login.noStaff': {
+    en: 'Cannot reach the clinic’s staff list. Check the internet and try again.',
+    hi: 'क्लिनिक की स्टाफ सूची नहीं मिल रही। इंटरनेट देखें और फिर से कोशिश करें।'
+  },
+  'login.retry': {
+    en: 'Try again',
+    hi: 'फिर से कोशिश करें'
+  },
+  'login.reason.wrongPin': {
+    en: 'That PIN is not right.',
+    hi: 'यह पिन सही नहीं है।'
+  },
+  'login.reason.locked': {
+    en: 'Too many tries. Wait a minute, then try again.',
+    hi: 'बहुत बार गलत हुआ। एक मिनट रुककर फिर कोशिश करें।'
+  },
+  'login.reason.unknown': {
+    en: 'That name is not on the staff list.',
+    hi: 'यह नाम स्टाफ सूची में नहीं है।'
+  },
+  'login.reason.noKubiRole': {
+    en: 'Your role does not use KuBi.',
+    hi: 'आपकी भूमिका KuBi इस्तेमाल नहीं करती।'
+  },
+  'login.reason.unreachable': {
+    en: 'Cannot reach the clinic right now. Try again.',
+    hi: 'अभी क्लिनिक से संपर्क नहीं हो पा रहा। फिर से कोशिश करें।'
+  },
+  'login.reason.badInput': {
+    en: 'Enter your 4-digit PIN.',
+    hi: 'अपना 4 अंकों का पिन डालें।'
+  },
+  'feed.allDown': {
+    en: 'Not updating from the clinic’s apps',
+    hi: 'क्लिनिक के ऐप से अपडेट नहीं हो रहा'
+  },
+  'feed.appointmentsDown': {
+    en: 'Appointments not updating',
+    hi: 'अपॉइंटमेंट अपडेट नहीं हो रहे'
+  },
+  'feed.staffDown': {
+    en: 'Staff and attendance not updating',
+    hi: 'स्टाफ और हाज़िरी अपडेट नहीं हो रही'
+  },
+  'feed.followUpsDown': {
+    en: 'Follow-ups not updating',
+    hi: 'फॉलो-अप अपडेट नहीं हो रहे'
+  },
+  'feed.stockDown': {
+    en: 'Stock not updating',
+    hi: 'स्टॉक अपडेट नहीं हो रहा'
+  },
+  'feed.lastUpdated': {
+    en: 'last updated',
+    hi: 'आखिरी अपडेट'
+  },
+  'status.Leave': {
+    en: 'On leave',
+    hi: 'छुट्टी पर'
+  },
+  'appt.changeInClinical': {
+    en: 'Change this in the Clinical Suite',
+    hi: 'इसे क्लिनिकल सुइट में बदलें'
   },
   'save.saved': {
     en: 'Saved',
@@ -40909,7 +41000,21 @@ window.KuBi.snapshotDay = function (day) {
   window.KuBi.DAY_FIELDS.forEach(function (f) {
     out[f] = day[f];
   });
+  // Which KuBi made this day: one running on the clinic's real data, or
+  // one running on demo data. Not a day field — nobody changes it.
+  out.mode = window.KuBi.isConnected && window.KuBi.isConnected() ? 'connected' : 'demo';
   return out;
+};
+
+/**
+ * May a stored day be loaded? Always, in demo. Connected, only a day that a
+ * connected KuBi saved: one saved on demo data would bring demo repairs,
+ * faults and packs back as though they were real.
+ */
+window.KuBi.dayRestorable = function (state) {
+  if (!state) return false;
+  if (!(window.KuBi.isConnected && window.KuBi.isConnected())) return true;
+  return state.mode === 'connected';
 };
 
 /**
@@ -41149,7 +41254,7 @@ window.KuBi.historySync = function () {
       // Apps Script can hang; don't let a stalled request wedge a caller.
       setTimeout(function () {
         finish(null);
-      }, TIMEOUT_MS);
+      }, opts.timeoutMs || TIMEOUT_MS);
       let url = c.url + '?action=' + encodeURIComponent(opts.action) + '&token=' + encodeURIComponent(c.token || '') + (opts.extra || '');
       const init = {
         method: opts.body ? 'POST' : 'GET'
@@ -41281,6 +41386,27 @@ window.KuBi.historySync = function () {
           ok: true,
           rev: json.rev
         };
+      });
+    },
+    // ---- the clinic's other two apps, through the gateway ---------------
+    // The feed can take several seconds when the Management and Clinical
+    // Suites both have to be asked afresh, so it gets far longer than a save.
+    feed: function (date) {
+      return request({
+        action: 'feed',
+        extra: '&date=' + encodeURIComponent(date),
+        timeoutMs: 60000
+      });
+    },
+    // POST, never GET: a PIN must not travel in a URL.
+    signIn: function (name, pin) {
+      return request({
+        action: 'signIn',
+        body: {
+          name: name,
+          pin: pin
+        },
+        timeoutMs: 30000
       });
     },
     // ---- visits, one small row per case per date ----------------------
@@ -41669,6 +41795,320 @@ window.KuBi.periodAvailable = function (period) {
   return window.KuBi.daysInPeriod(period).length > 0;
 };
 
+// ---- src/clinicFeed.js ----
+// clinicFeed.js — the clinic's real data, from the gateway.
+//
+// KuBi used to run on built-in demo data. Connected, it reads the
+// Management Suite (staff, attendance) and the Clinical Suite
+// (appointments, follow-ups, patients who have not returned) through
+// apps-script/KuBi_Gateway.gs, and the demo data is gone.
+//
+// CONNECTED OR DEMO
+// Connected means the sheet is configured (sheetsSync.isConfigured) — the
+// clinic's own KuBi.html. There is no half-way: a connected KuBi never
+// falls back to demo data, and never accepts the demo PINs, because the
+// demo PINs would open the clinic's real sheet to anybody.
+//
+// WHAT IS NOT CONNECTED YET, AND IS THEREFORE EMPTY RATHER THAN INVENTED
+//   stock           the clinic's items must first be linked to what each
+//                   procedure uses; until then there is no stock check
+//   lab work        no lab records reach KuBi yet
+//   cases           the Clinical Suite's case feature is not in use
+//   sterile packs, repairs, equipment faults
+//                   KuBi's own records, which start empty and fill as
+//                   staff use KuBi — never with demo rows
+// An empty list says "nothing known". A demo row says something false.
+//
+// Kept in memory only — never browser storage (see the build notes).
+
+window.KuBi = window.KuBi || {};
+window.KuBi.isConnected = function () {
+  return !!(window.KuBi.historySync && window.KuBi.historySync.isConfigured());
+};
+
+/** Remove every piece of demo data, so nothing invented can show or raise an alert. */
+window.KuBi.clearDemoData = function () {
+  const K = window.KuBi;
+  K.EMPLOYEES = [];
+  K.ATTENDANCE = [];
+  K.ATTENDANCE_LAST_SYNCED = null;
+  K.APPOINTMENTS_TODAY = [];
+  K.FOLLOW_UPS = [];
+  K.PATIENT_RECORDS = [];
+  K.UPCOMING = [];
+  K.CASES = {};
+  K.LAB_CASES = {};
+  K.MATERIALS = [];
+  K.STER_PACKS = [];
+  K.REPAIRS_SEED = [];
+  K.EQUIPMENT_STATUS_SEED = {};
+};
+
+// Before any component reads its starting state: a connected KuBi opens
+// empty and fills from the feed, rather than flashing demo patients.
+if (window.KuBi.isConnected()) window.KuBi.clearDemoData();
+function _feedNorm(n) {
+  return String(n == null ? '' : n).toLowerCase().replace(/[^a-z0-9ऀ-ॿ]+/g, ' ').trim().replace(/\s+/g, ' ');
+}
+
+/**
+ * Put the feed into the places the rest of KuBi already reads. Only a part
+ * that answered is applied: a part that failed leaves what was there,
+ * which in a connected KuBi is the last real answer or nothing.
+ */
+window.KuBi.applyFeed = function (feed) {
+  const K = window.KuBi;
+  if (!feed || !feed.sources) return;
+  const src = feed.sources;
+  if (src.management && src.management.ok) {
+    const people = (feed.staff || []).filter(function (s) {
+      return s.active !== false;
+    });
+    K.EMPLOYEES = people.map(function (s) {
+      return {
+        id: s.id,
+        name: s.name,
+        role: s.role || null,
+        designation: s.designation || '',
+        source: s.source || 'management'
+      };
+    });
+
+    // One line per person for today: in, late, on leave, or not in yet.
+    // "Absent" is only ever inferred from no check-in — the Management
+    // Suite, not KuBi, owns attendance.
+    const byId = {},
+      byName = {},
+      leaveBy = {};
+    (feed.attendance || []).forEach(function (a) {
+      if (a.staffId) byId[a.staffId] = a;
+      byName[_feedNorm(a.staffName)] = a;
+    });
+    (feed.leave || []).forEach(function (l) {
+      leaveBy[_feedNorm(l.staffName)] = l;
+    });
+    K.ATTENDANCE = people.map(function (s) {
+      const a = byId[s.id] || byName[_feedNorm(s.name)];
+      const onLeave = leaveBy[_feedNorm(s.name)];
+      if (a && a.checkIn) {
+        return {
+          empId: s.id,
+          date: feed.date,
+          timeIn: a.checkIn,
+          status: a.late ? 'Late' : 'Present',
+          lateReason: a.late ? a.lateMin ? a.lateMin + ' min' : a.lateTag || '' : ''
+        };
+      }
+      if (onLeave) return {
+        empId: s.id,
+        date: feed.date,
+        timeIn: '',
+        status: 'Leave',
+        lateReason: onLeave.type || ''
+      };
+      return {
+        empId: s.id,
+        date: feed.date,
+        timeIn: '',
+        status: 'Absent',
+        lateReason: ''
+      };
+    });
+    K.ATTENDANCE_LAST_SYNCED = new Date();
+  }
+  if (src.clinical && src.clinical.ok) {
+    K.UPCOMING = (feed.upcoming || []).map(function (u) {
+      return {
+        date: u.date,
+        patient: u.patient,
+        procedureType: u.procedureType,
+        caseId: u.caseId || null
+      };
+    });
+  }
+  if (src.followUps && src.followUps.ok) {
+    K.FOLLOW_UPS = (feed.followUps || []).map(function (f) {
+      return {
+        id: f.id,
+        patient: f.patient,
+        reason: f.reason,
+        due: f.due,
+        caseId: f.caseId || null
+      };
+    });
+    // The Clinical Suite's recall list: patients with no visit for 180+
+    // days and nothing booked. It does not know whether a plan was ever
+    // started, so KuBi does not guess — `started` stays unknown.
+    K.PATIENT_RECORDS = (feed.recall || []).map(function (r) {
+      return {
+        id: 'R|' + r.uhid,
+        patient: r.patient,
+        lastVisit: r.lastVisit,
+        planned: '',
+        started: null
+      };
+    });
+  }
+  if (src.lists && src.lists.ok && (feed.chairs || []).length) {
+    const nums = feed.chairs.map(function (c) {
+      const m = String(c).match(/\d+/);
+      return m ? Number(m[0]) : null;
+    }).filter(function (n) {
+      return n !== null;
+    });
+    if (nums.length) K.CHAIRS = nums;
+  }
+};
+
+/**
+ * Today's appointments: the Clinical Suite's list and status, with what
+ * only KuBi knows laid on top.
+ *
+ * Front desk moves patients in the Clinical Suite (checked in → in chair →
+ * completed), so that status wins — except for the two things KuBi itself
+ * records: a procedure started and not finished is "in treatment", and a
+ * visit KuBi has written up is "done".
+ *
+ * Pure, so it is tested directly.
+ */
+window.KuBi.mergeFeedAppointments = function (feedAppts, prev, procedureState, closedCases) {
+  const today = window.KuBi.operatingDate();
+  const before = {};
+  (prev || []).forEach(function (a) {
+    before[a.id] = a;
+  });
+  return (feedAppts || []).map(function (fa) {
+    const local = before[fa.id];
+    const proc = (procedureState || {})[fa.id];
+    let status = fa.status;
+    if ((closedCases || {})[fa.id]) status = 'done';else if (proc && proc.startedAt && !proc.completedAt && status !== 'done' && status !== 'no_show') {
+      status = 'in_treatment';
+    }
+
+    // When the status last changed. The Clinical Suite stamps check-in,
+    // in-chair and checkout times; that is the truth about how long
+    // somebody has waited. Without one, a status that has not changed
+    // keeps the time KuBi already had.
+    let statusAt = null;
+    if (fa.statusTime && status === fa.status) statusAt = new Date(today + 'T' + fa.statusTime + ':00');else if (local && local.status === status && local.statusAt) statusAt = local.statusAt;else if (status !== 'booked') statusAt = new Date();
+    return {
+      id: fa.id,
+      source: 'clinical',
+      uhid: fa.uhid || null,
+      patient: fa.patient,
+      isNew: false,
+      time: fa.time,
+      chair: fa.chair,
+      doctor: fa.doctor,
+      treatment: fa.treatment,
+      procedureType: fa.procedureType,
+      status: status,
+      statusAt: statusAt,
+      caseId: fa.caseId || null
+    };
+  });
+};
+
+// ---- the store --------------------------------------------------------
+window.KuBi.clinicFeed = function () {
+  let data = null;
+  let status = 'off'; // off | loading | ok | partial | down
+  let at = null; // when the last answer arrived
+  let listeners = [];
+  let inFlight = false;
+  let timer = null;
+  function notify() {
+    listeners.slice().forEach(function (fn) {
+      try {
+        fn();
+      } catch (e) {/* keep going */}
+    });
+  }
+  function load() {
+    if (!window.KuBi.isConnected() || inFlight) return Promise.resolve(false);
+    inFlight = true;
+    if (!data) {
+      status = 'loading';
+      notify();
+    }
+    return window.KuBi.historySync.feed(window.KuBi.operatingDate()).then(function (json) {
+      inFlight = false;
+      if (!json) {
+        // Unreachable. What was already shown stays, and says how old it is.
+        status = 'down';
+        notify();
+        return false;
+      }
+      data = json;
+      at = new Date();
+      const s = json.sources || {};
+      status = Object.keys(s).every(function (k) {
+        return s[k].ok;
+      }) ? 'ok' : 'partial';
+      window.KuBi.applyFeed(json);
+      notify();
+      return true;
+    });
+  }
+  return {
+    load: load,
+    start: function (everyMs) {
+      if (!window.KuBi.isConnected() || timer) return;
+      load();
+      timer = setInterval(load, everyMs || 60000);
+    },
+    stop: function () {
+      if (timer) clearInterval(timer);
+      timer = null;
+    },
+    subscribe: function (fn) {
+      listeners.push(fn);
+      return function () {
+        listeners = listeners.filter(function (l) {
+          return l !== fn;
+        });
+      };
+    },
+    data: function () {
+      return data;
+    },
+    state: function () {
+      return {
+        status: status,
+        at: at,
+        sources: data ? data.sources : {}
+      };
+    },
+    // Test seam.
+    reset: function () {
+      data = null;
+      status = 'off';
+      at = null;
+      listeners = [];
+      inFlight = false;
+      this.stop();
+    },
+    _set: function (json) {
+      data = json;
+      at = new Date();
+      status = 'ok';
+      window.KuBi.applyFeed(json);
+      notify();
+    }
+  };
+}();
+
+/** Sign in through the gateway. Resolves to { ok, person } or { ok: false, reason }. */
+window.KuBi.signInConnected = function (name, pin) {
+  return window.KuBi.historySync.signIn(name, pin).then(function (res) {
+    if (!res) return {
+      ok: false,
+      reason: 'unreachable'
+    };
+    return res;
+  });
+};
+
 // ---- src/EmployeeMaster.jsx ----
 // EmployeeMaster.jsx — staff records. Each employee is assigned exactly
 // one role; everything that employee can access follows from that role
@@ -41748,7 +42188,8 @@ window.KuBi.AttendanceModule = function AttendanceModule({
   const statusClass = {
     Present: 'st-present',
     Late: 'st-late',
-    Absent: 'st-absent'
+    Absent: 'st-absent',
+    Leave: 'st-leave'
   };
   return /*#__PURE__*/React.createElement("div", {
     className: "module"
@@ -41756,14 +42197,14 @@ window.KuBi.AttendanceModule = function AttendanceModule({
     className: "module-head"
   }, /*#__PURE__*/React.createElement("h2", null, t('attendance.title', lang)), /*#__PURE__*/React.createElement("p", {
     className: "module-sub"
-  }, t('attendance.subtitle', lang), /*#__PURE__*/React.createElement("span", {
+  }, t('attendance.subtitle', lang), ATTENDANCE_LAST_SYNCED ? /*#__PURE__*/React.createElement("span", {
     className: "synced"
   }, " ", t('attendance.lastSynced', lang), " ", new Date(ATTENDANCE_LAST_SYNCED).toLocaleString('en-IN', {
     day: '2-digit',
     month: 'short',
     hour: '2-digit',
     minute: '2-digit'
-  })))), /*#__PURE__*/React.createElement("div", {
+  })) : null)), /*#__PURE__*/React.createElement("div", {
     className: "card"
   }, /*#__PURE__*/React.createElement("div", {
     className: "card-title-row"
@@ -42847,6 +43288,30 @@ window.KuBi.Patients = function Patients({
   const RoleBadge = window.KuBi.RoleBadge;
   const readiness = window.KuBi.PRE_ARRIVAL_READINESS;
   const STATUSES = window.KuBi.CHECKIN_STATUSES;
+  // Front desk moves patients in the Clinical Suite. For those appointments
+  // KuBi shows the status and does not offer to change it: two places
+  // setting one status is how two people end up disagreeing about where a
+  // patient is.
+  function statusControl(a) {
+    if (a.source === 'clinical') {
+      return /*#__PURE__*/React.createElement("span", {
+        className: 'status-select status-select-' + a.status + ' status-readonly',
+        title: t('appt.changeInClinical', lang)
+      }, t('checkinStatus.' + a.status, lang));
+    }
+    return /*#__PURE__*/React.createElement("select", {
+      className: 'status-select status-select-' + a.status,
+      value: a.status,
+      onChange: function (e) {
+        setStatus(a.id, e.target.value);
+      }
+    }, STATUSES.map(function (st) {
+      return /*#__PURE__*/React.createElement("option", {
+        key: st,
+        value: st
+      }, t('checkinStatus.' + st, lang));
+    }));
+  }
   const [subtab, setSubtab] = React.useState(initialSubtab || 'journey');
   // A case is not a place you navigate to — it is what you get when you
   // click a patient, a lab item, a follow-up or a lapsed record. So it
@@ -43119,13 +43584,13 @@ window.KuBi.Patients = function Patients({
         className: "fu-row"
       }, /*#__PURE__*/React.createElement("span", {
         className: "fu-dot"
-      }, r.started ? '🟡' : '🔴'), /*#__PURE__*/React.createElement("span", {
+      }, r.started === null ? '⚪' : r.started ? '🟡' : '🔴'), /*#__PURE__*/React.createElement("span", {
         className: "fu-patient"
       }, r.patient), /*#__PURE__*/React.createElement("span", {
         className: "fu-reason"
       }, /*#__PURE__*/React.createElement("span", {
         className: "lapsed-kind"
-      }, r.started ? t('lapsed.unfinished', lang) : t('lapsed.neverStarted', lang)), /*#__PURE__*/React.createElement("span", {
+      }, r.started === null ? t('lapsed.recall', lang) : r.started ? t('lapsed.unfinished', lang) : t('lapsed.neverStarted', lang)), /*#__PURE__*/React.createElement("span", {
         className: "lapsed-plan"
       }, r.planned)), /*#__PURE__*/React.createElement("span", {
         className: "fu-due"
@@ -43254,18 +43719,7 @@ window.KuBi.Patients = function Patients({
       }, st.current) : null;
     }(), /*#__PURE__*/React.createElement("span", {
       className: "prep-chair-tag"
-    }, t('treatmentPrep.chair', lang), " ", a.chair), /*#__PURE__*/React.createElement("select", {
-      className: 'status-select status-select-' + a.status,
-      value: a.status,
-      onChange: function (e) {
-        setStatus(a.id, e.target.value);
-      }
-    }, STATUSES.map(function (st) {
-      return /*#__PURE__*/React.createElement("option", {
-        key: st,
-        value: st
-      }, t('checkinStatus.' + st, lang));
-    }))), isException ? /*#__PURE__*/React.createElement("div", {
+    }, t('treatmentPrep.chair', lang), " ", a.chair), statusControl(a)), isException ? /*#__PURE__*/React.createElement("div", {
       className: 'journey-exception status-select-' + a.status
     }, t('checkinStatus.' + a.status, lang)) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
       className: "strip-label"
@@ -43371,18 +43825,7 @@ window.KuBi.Patients = function Patients({
       onClick: function () {
         goTo('treatment', 'before', a.id);
       }
-    }, a.treatment)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("select", {
-      className: 'status-select status-select-' + a.status,
-      value: a.status,
-      onChange: function (e) {
-        setStatus(a.id, e.target.value);
-      }
-    }, STATUSES.map(function (st) {
-      return /*#__PURE__*/React.createElement("option", {
-        key: st,
-        value: st
-      }, t('checkinStatus.' + st, lang));
-    }))), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("button", {
+    }, a.treatment)), /*#__PURE__*/React.createElement("td", null, statusControl(a)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("button", {
       className: "prep-toggle-btn",
       onClick: function () {
         setExpandedPrep(isExpanded ? null : a.id);
@@ -44595,21 +45038,92 @@ function LangToggle({
 function LoginScreen({
   onLogin,
   lang,
-  setLang
+  setLang,
+  feed
 }) {
   const t = window.KuBi.t;
   const [pin, setPin] = React.useState('');
   const [error, setError] = React.useState('');
+  const [who, setWho] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const connected = window.KuBi.isConnected();
+
+  // Connected: a name, then that person's Management Suite PIN, checked on
+  // the server. Management PINs belong to a ROLE and are shared, so a PIN
+  // alone cannot say who someone is. The demo PINs are never accepted here.
+  const people = connected ? (window.KuBi.EMPLOYEES || []).filter(function (e) {
+    return e.role;
+  }).slice().sort(function (a, b) {
+    return a.name.localeCompare(b.name);
+  }) : [];
   function submit(e) {
     e.preventDefault();
-    const emp = window.KuBi.EMPLOYEES.find(function (x) {
-      return x.pin === pin;
-    });
-    if (emp) {
-      onLogin(emp);
-    } else {
-      setError(t('login.error', lang));
+    if (!connected) {
+      const emp = window.KuBi.EMPLOYEES.find(function (x) {
+        return x.pin === pin;
+      });
+      if (emp) {
+        onLogin(emp);
+      } else {
+        setError(t('login.error', lang));
+      }
+      return;
     }
+    if (!who) {
+      setError(t('login.pickName', lang));
+      return;
+    }
+    setBusy(true);
+    window.KuBi.signInConnected(who, pin).then(function (res) {
+      setBusy(false);
+      if (res.ok && res.person) {
+        onLogin(res.person);
+        return;
+      }
+      setPin('');
+      setError(t('login.reason.' + (res.reason || 'wrongPin'), lang));
+    });
+  }
+  if (connected && (!feed || feed.status === 'loading' || feed.status === 'off') && !people.length) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "login-wrap"
+    }, /*#__PURE__*/React.createElement(LangToggle, {
+      lang: lang,
+      setLang: setLang
+    }), /*#__PURE__*/React.createElement("div", {
+      className: "login-card"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "brand"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "brand-mark"
+    }, "Ku"), /*#__PURE__*/React.createElement("div", {
+      className: "brand-name"
+    }, "KuBi")), /*#__PURE__*/React.createElement("p", {
+      className: "module-sub"
+    }, t('login.connecting', lang))));
+  }
+  if (connected && !people.length) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "login-wrap"
+    }, /*#__PURE__*/React.createElement(LangToggle, {
+      lang: lang,
+      setLang: setLang
+    }), /*#__PURE__*/React.createElement("div", {
+      className: "login-card"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "brand"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "brand-mark"
+    }, "Ku"), /*#__PURE__*/React.createElement("div", {
+      className: "brand-name"
+    }, "KuBi")), /*#__PURE__*/React.createElement("div", {
+      className: "field-error"
+    }, t('login.noStaff', lang)), /*#__PURE__*/React.createElement("button", {
+      className: "btn-primary",
+      onClick: function () {
+        window.KuBi.clinicFeed.load();
+      }
+    }, t('login.retry', lang))));
   }
   return /*#__PURE__*/React.createElement("div", {
     className: "login-wrap"
@@ -44628,7 +45142,25 @@ function LoginScreen({
     className: "brand-sub"
   }, t('app.brandSub', lang)))), /*#__PURE__*/React.createElement("form", {
     onSubmit: submit
-  }, /*#__PURE__*/React.createElement("label", {
+  }, connected ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("label", {
+    className: "field-label",
+    htmlFor: "who"
+  }, t('login.yourName', lang)), /*#__PURE__*/React.createElement("select", {
+    id: "who",
+    className: "pin-input login-name",
+    value: who,
+    onChange: function (e) {
+      setWho(e.target.value);
+      setError('');
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, t('login.pickName', lang)), people.map(function (p) {
+    return /*#__PURE__*/React.createElement("option", {
+      key: p.id,
+      value: p.name
+    }, p.name);
+  }))) : null, /*#__PURE__*/React.createElement("label", {
     className: "field-label",
     htmlFor: "pin"
   }, t('login.enterPin', lang)), /*#__PURE__*/React.createElement("input", {
@@ -44646,8 +45178,9 @@ function LoginScreen({
     className: "field-error"
   }, error) : null, /*#__PURE__*/React.createElement("button", {
     className: "btn-primary",
-    type: "submit"
-  }, t('login.signIn', lang))), /*#__PURE__*/React.createElement("div", {
+    type: "submit",
+    disabled: busy
+  }, busy ? t('login.checking', lang) : t('login.signIn', lang))), /*#__PURE__*/React.createElement("div", {
     className: "build-stamp build-stamp-login"
   }, window.KuBi.BUILD_STAMP)));
 }
@@ -44730,6 +45263,11 @@ function useClinicDay() {
   const rev = React.useRef(null); // the revision this browser last saw
   const retryAt = React.useRef(0); // how long to wait after a failure
   const inFlight = React.useRef(false); // one save at a time, always
+  // Who is signed in, for "saved by". The day lives ABOVE the login gate,
+  // so it cannot see the user directly — App tells it. A change nobody
+  // made (appointments arriving from the Clinical Suite before anyone signs
+  // in) is saved as KuBi's own.
+  const savedBy = React.useRef(null);
   // Staff must be able to SEE that saving is failing. A silent retry is
   // how a clinic works all afternoon and finds out at closing that
   // nothing was stored.
@@ -44747,7 +45285,11 @@ function useClinicDay() {
       // Reached the sheet. Either it holds today, or it holds nothing yet —
       // both mean writing is safe. Only the first restores anything.
       if (window.KuBi.dayIsForToday(result.record)) {
-        window.KuBi.restoreDay(day, result.record.state);
+        // A day saved while KuBi ran on demo data holds demo repairs,
+        // faults and packs. Connected, it is not restored — those would
+        // raise alerts about things that never happened — but its revision
+        // is still taken, so the next save replaces it cleanly.
+        if (window.KuBi.dayRestorable(result.record.state)) window.KuBi.restoreDay(day, result.record.state);
         rev.current = result.record.rev === undefined ? null : result.record.rev;
       } else {
         rev.current = null; // nothing stored for today yet
@@ -44787,7 +45329,7 @@ function useClinicDay() {
     });
     const date = window.KuBi.operatingDate();
     const mine = window.KuBi.snapshotDay(day);
-    return window.KuBi.historySync.daySave(date, mine, rev.current, user.name).then(function (res) {
+    return window.KuBi.historySync.daySave(date, mine, rev.current, savedBy.current || 'KuBi').then(function (res) {
       if (res.ok) {
         rev.current = res.rev;
         retryAt.current = 0;
@@ -44803,7 +45345,7 @@ function useClinicDay() {
         const merged = window.KuBi.mergeDay(mine, res.record && res.record.state);
         window.KuBi.restoreDay(day, merged);
         rev.current = res.rev;
-        return window.KuBi.historySync.daySave(date, merged, res.rev, user.name).then(function (again) {
+        return window.KuBi.historySync.daySave(date, merged, res.rev, savedBy.current || 'KuBi').then(function (again) {
           if (again.ok) {
             rev.current = again.rev;
             retryAt.current = 0;
@@ -44882,6 +45424,28 @@ function useClinicDay() {
     };
   }, []);
 
+  // ---- today's appointments come from the Clinical Suite ---------------
+  // Every time the feed answers, the list and each status are taken from
+  // it, with KuBi's own two facts laid on top (in treatment, written up).
+  // The refs let the merge see the current KuBi state without the feed
+  // subscription being torn down on every tick.
+  const procRef = React.useRef(procedureState);
+  const closedRef = React.useRef(closedCases);
+  procRef.current = procedureState;
+  closedRef.current = closedCases;
+  React.useEffect(function () {
+    function pull() {
+      const f = window.KuBi.clinicFeed.data();
+      if (!f || !f.sources || !f.sources.clinical || !f.sources.clinical.ok) return;
+      setAppointments(function (prev) {
+        const next = window.KuBi.mergeFeedAppointments(f.appointments, prev, procRef.current, closedRef.current);
+        return JSON.stringify(next) === JSON.stringify(prev) ? prev : next;
+      });
+    }
+    pull();
+    return window.KuBi.clinicFeed.subscribe(pull);
+  }, []);
+
   // ---- the case outlives the day ----------------------------------------
   // Each case visit is read off the day as it happens and kept, so tomorrow
   // the case still knows what today did to it. Nothing is entered for this.
@@ -44907,6 +45471,9 @@ function useClinicDay() {
 
   // The day, plus whether it is actually reaching the sheet.
   day.saveState = saveState;
+  day.setSavedBy = function (name) {
+    savedBy.current = name || null;
+  };
   return day;
 }
 function Shell({
@@ -44914,7 +45481,8 @@ function Shell({
   onLogout,
   lang,
   setLang,
-  day
+  day,
+  feed
 }) {
   const t = window.KuBi.t;
   const access = window.KuBi.AREA_ACCESS[user.role] || [];
@@ -45399,18 +45967,56 @@ function Shell({
   }), /*#__PURE__*/React.createElement("button", {
     className: "btn-ghost",
     onClick: onLogout
-  }, t('topbar.signOut', lang)))), /*#__PURE__*/React.createElement("main", {
+  }, t('topbar.signOut', lang)))), feed && window.KuBi.isConnected() && (feed.status === 'down' || feed.status === 'partial') ? /*#__PURE__*/React.createElement("div", {
+    className: "feed-warning",
+    role: "status"
+  }, function () {
+    const s = feed.sources || {};
+    const parts = [];
+    if (feed.status === 'down') parts.push(t('feed.allDown', lang));else {
+      if (s.clinical && !s.clinical.ok) parts.push(t('feed.appointmentsDown', lang));
+      if (s.management && !s.management.ok) parts.push(t('feed.staffDown', lang));
+      if (s.followUps && !s.followUps.ok) parts.push(t('feed.followUpsDown', lang));
+      if (s.inventory && !s.inventory.ok) parts.push(t('feed.stockDown', lang));
+    }
+    const when = feed.at ? ' · ' + t('feed.lastUpdated', lang) + ' ' + new Date(feed.at).toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit'
+    }) : '';
+    return '⚠ ' + parts.join(' · ') + when;
+  }()) : null, /*#__PURE__*/React.createElement("main", {
     className: "content"
   }, renderArea())));
+}
+
+// The clinic's real data, refreshed every minute while KuBi is open. It
+// sits above the login gate for the same reason the day does: the staff
+// list is needed to sign in, and a shift change must not drop it.
+function useClinicFeed() {
+  const [state, setState] = React.useState(window.KuBi.clinicFeed.state());
+  React.useEffect(function () {
+    const off = window.KuBi.clinicFeed.subscribe(function () {
+      setState(window.KuBi.clinicFeed.state());
+    });
+    window.KuBi.clinicFeed.start(60000);
+    return function () {
+      off();
+      window.KuBi.clinicFeed.stop();
+    };
+  }, []);
+  return state;
 }
 function App() {
   const [user, setUser] = React.useState(null);
   const [lang, setLang] = React.useState('en');
+  const feed = useClinicFeed();
   const day = useClinicDay();
+  day.setSavedBy(user ? user.name : null);
   if (!user) return /*#__PURE__*/React.createElement(LoginScreen, {
     onLogin: setUser,
     lang: lang,
-    setLang: setLang
+    setLang: setLang,
+    feed: feed
   });
   return /*#__PURE__*/React.createElement(Shell, {
     user: user,
@@ -45419,9 +46025,12 @@ function App() {
     },
     lang: lang,
     setLang: setLang,
-    day: day
+    day: day,
+    feed: feed
   });
 }
+window.KuBi.LoginScreen = LoginScreen;
+window.KuBi.App = App;
 ReactDOM.createRoot(document.getElementById('root')).render(/*#__PURE__*/React.createElement(App, null));
 
 </script>

@@ -46,7 +46,7 @@ window.KuBi.historySync = (function () {
     return new Promise(function (resolve) {
       const finish = function (value) { if (!done) { done = true; resolve(value); } };
       // Apps Script can hang; don't let a stalled request wedge a caller.
-      setTimeout(function () { finish(null); }, TIMEOUT_MS);
+      setTimeout(function () { finish(null); }, opts.timeoutMs || TIMEOUT_MS);
 
       let url = c.url + '?action=' + encodeURIComponent(opts.action) +
                 '&token=' + encodeURIComponent(c.token || '') +
@@ -143,6 +143,18 @@ window.KuBi.historySync = (function () {
           }
           return { ok: true, rev: json.rev };
         });
+    },
+
+    // ---- the clinic's other two apps, through the gateway ---------------
+    // The feed can take several seconds when the Management and Clinical
+    // Suites both have to be asked afresh, so it gets far longer than a save.
+    feed: function (date) {
+      return request({ action: 'feed', extra: '&date=' + encodeURIComponent(date), timeoutMs: 60000 });
+    },
+
+    // POST, never GET: a PIN must not travel in a URL.
+    signIn: function (name, pin) {
+      return request({ action: 'signIn', body: { name: name, pin: pin }, timeoutMs: 30000 });
     },
 
     // ---- visits, one small row per case per date ----------------------

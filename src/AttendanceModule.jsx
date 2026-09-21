@@ -17,7 +17,7 @@ window.KuBi.AttendanceModule = function AttendanceModule({ lang }) {
   const empById = {};
   EMPLOYEES.forEach(function (e) { empById[e.id] = e; });
 
-  const statusClass = { Present: 'st-present', Late: 'st-late', Absent: 'st-absent' };
+  const statusClass = { Present: 'st-present', Late: 'st-late', Absent: 'st-absent', Leave: 'st-leave' };
 
   return (
     <div className="module">
@@ -25,7 +25,9 @@ window.KuBi.AttendanceModule = function AttendanceModule({ lang }) {
         <h2>{t('attendance.title', lang)}</h2>
         <p className="module-sub">
           {t('attendance.subtitle', lang)}
-          <span className="synced"> {t('attendance.lastSynced', lang)} {new Date(ATTENDANCE_LAST_SYNCED).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+          {ATTENDANCE_LAST_SYNCED ? (
+            <span className="synced"> {t('attendance.lastSynced', lang)} {new Date(ATTENDANCE_LAST_SYNCED).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+          ) : null}
         </p>
       </div>
 

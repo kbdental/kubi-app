@@ -17,6 +17,29 @@ window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setS
   const RoleBadge = window.KuBi.RoleBadge;
   const readiness = window.KuBi.PRE_ARRIVAL_READINESS;
   const STATUSES = window.KuBi.CHECKIN_STATUSES;
+  // Front desk moves patients in the Clinical Suite. For those appointments
+  // KuBi shows the status and does not offer to change it: two places
+  // setting one status is how two people end up disagreeing about where a
+  // patient is.
+  function statusControl(a) {
+    if (a.source === 'clinical') {
+      return (
+        <span className={'status-select status-select-' + a.status + ' status-readonly'}
+              title={t('appt.changeInClinical', lang)}>
+          {t('checkinStatus.' + a.status, lang)}
+        </span>
+      );
+    }
+    return (
+      <select
+        className={'status-select status-select-' + a.status}
+        value={a.status}
+        onChange={function (e) { setStatus(a.id, e.target.value); }}
+      >
+        {STATUSES.map(function (st) { return <option key={st} value={st}>{t('checkinStatus.' + st, lang)}</option>; })}
+      </select>
+    );
+  }
   const [subtab, setSubtab] = React.useState(initialSubtab || 'journey');
   // A case is not a place you navigate to — it is what you get when you
   // click a patient, a lab item, a follow-up or a lapsed record. So it
@@ -307,10 +330,14 @@ window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setS
                   const days = window.KuBi.daysSinceVisit(r);
                   return (
                     <li key={r.id} className="fu-row">
-                      <span className="fu-dot">{r.started ? '🟡' : '🔴'}</span>
+                      <span className="fu-dot">{r.started === null ? '⚪' : r.started ? '🟡' : '🔴'}</span>
                       <span className="fu-patient">{r.patient}</span>
                       <span className="fu-reason">
-                        <span className="lapsed-kind">{r.started ? t('lapsed.unfinished', lang) : t('lapsed.neverStarted', lang)}</span>
+                        {/* The Clinical Suite's recall list knows only the last
+                            visit, not whether a plan was started, so KuBi says
+                            that much and no more. */}
+                        <span className="lapsed-kind">{r.started === null ? t('lapsed.recall', lang)
+                          : r.started ? t('lapsed.unfinished', lang) : t('lapsed.neverStarted', lang)}</span>
                         <span className="lapsed-plan">{r.planned}</span>
                       </span>
                       <span className="fu-due">{t('lapsed.lastSeen', lang)} {days} {t('lapsed.daysAgo', lang)}</span>
@@ -447,13 +474,7 @@ window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setS
                   return st ? <span className="visit-badge">{st.current}</span> : null;
                 })()}
                 <span className="prep-chair-tag">{t('treatmentPrep.chair', lang)} {a.chair}</span>
-                <select
-                  className={'status-select status-select-' + a.status}
-                  value={a.status}
-                  onChange={function (e) { setStatus(a.id, e.target.value); }}
-                >
-                  {STATUSES.map(function (st) { return <option key={st} value={st}>{t('checkinStatus.' + st, lang)}</option>; })}
-                </select>
+                {statusControl(a)}
               </div>
               {isException ? (
                 <div className={'journey-exception status-select-' + a.status}>{t('checkinStatus.' + a.status, lang)}</div>
@@ -570,13 +591,7 @@ window.KuBi.Patients = function Patients({ currentUser, lang, appointments, setS
                       <button className="link-btn" onClick={function () { goTo('treatment', 'before', a.id); }}>{a.treatment}</button>
                     </td>
                     <td>
-                      <select
-                        className={'status-select status-select-' + a.status}
-                        value={a.status}
-                        onChange={function (e) { setStatus(a.id, e.target.value); }}
-                      >
-                        {STATUSES.map(function (st) { return <option key={st} value={st}>{t('checkinStatus.' + st, lang)}</option>; })}
-                      </select>
+                      {statusControl(a)}
                     </td>
                     <td>
                       <button className="prep-toggle-btn" onClick={function () { setExpandedPrep(isExpanded ? null : a.id); }}>

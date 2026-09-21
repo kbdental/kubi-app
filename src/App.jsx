@@ -37,15 +37,63 @@ function LangToggle({ lang, setLang }) {
   );
 }
 
-function LoginScreen({ onLogin, lang, setLang }) {
+function LoginScreen({ onLogin, lang, setLang, feed }) {
   const t = window.KuBi.t;
   const [pin, setPin] = React.useState('');
   const [error, setError] = React.useState('');
+  const [who, setWho] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const connected = window.KuBi.isConnected();
+
+  // Connected: a name, then that person's Management Suite PIN, checked on
+  // the server. Management PINs belong to a ROLE and are shared, so a PIN
+  // alone cannot say who someone is. The demo PINs are never accepted here.
+  const people = connected
+    ? (window.KuBi.EMPLOYEES || []).filter(function (e) { return e.role; })
+        .slice().sort(function (a, b) { return a.name.localeCompare(b.name); })
+    : [];
 
   function submit(e) {
     e.preventDefault();
-    const emp = window.KuBi.EMPLOYEES.find(function (x) { return x.pin === pin; });
-    if (emp) { onLogin(emp); } else { setError(t('login.error', lang)); }
+    if (!connected) {
+      const emp = window.KuBi.EMPLOYEES.find(function (x) { return x.pin === pin; });
+      if (emp) { onLogin(emp); } else { setError(t('login.error', lang)); }
+      return;
+    }
+    if (!who) { setError(t('login.pickName', lang)); return; }
+    setBusy(true);
+    window.KuBi.signInConnected(who, pin).then(function (res) {
+      setBusy(false);
+      if (res.ok && res.person) { onLogin(res.person); return; }
+      setPin('');
+      setError(t('login.reason.' + (res.reason || 'wrongPin'), lang));
+    });
+  }
+
+  if (connected && (!feed || feed.status === 'loading' || feed.status === 'off') && !people.length) {
+    return (
+      <div className="login-wrap">
+        <LangToggle lang={lang} setLang={setLang} />
+        <div className="login-card">
+          <div className="brand"><div className="brand-mark">Ku</div><div className="brand-name">KuBi</div></div>
+          <p className="module-sub">{t('login.connecting', lang)}</p>
+        </div>
+      </div>
+    );
+  }
+  if (connected && !people.length) {
+    return (
+      <div className="login-wrap">
+        <LangToggle lang={lang} setLang={setLang} />
+        <div className="login-card">
+          <div className="brand"><div className="brand-mark">Ku</div><div className="brand-name">KuBi</div></div>
+          <div className="field-error">{t('login.noStaff', lang)}</div>
+          <button className="btn-primary" onClick={function () { window.KuBi.clinicFeed.load(); }}>
+            {t('login.retry', lang)}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -60,6 +108,16 @@ function LoginScreen({ onLogin, lang, setLang }) {
           </div>
         </div>
         <form onSubmit={submit}>
+          {connected ? (
+            <React.Fragment>
+              <label className="field-label" htmlFor="who">{t('login.yourName', lang)}</label>
+              <select id="who" className="pin-input login-name" value={who}
+                      onChange={function (e) { setWho(e.target.value); setError(''); }}>
+                <option value="">{t('login.pickName', lang)}</option>
+                {people.map(function (p) { return <option key={p.id} value={p.name}>{p.name}</option>; })}
+              </select>
+            </React.Fragment>
+          ) : null}
           <label className="field-label" htmlFor="pin">{t('login.enterPin', lang)}</label>
           <input
             id="pin"
@@ -71,7 +129,9 @@ function LoginScreen({ onLogin, lang, setLang }) {
             autoFocus
           />
           {error ? <div className="field-error">{error}</div> : null}
-          <button className="btn-primary" type="submit">{t('login.signIn', lang)}</button>
+          <button className="btn-primary" type="submit" disabled={busy}>
+            {busy ? t('login.checking', lang) : t('login.signIn', lang)}
+          </button>
         </form>
         <div className="build-stamp build-stamp-login">{window.KuBi.BUILD_STAMP}</div>
       </div>
@@ -140,6 +200,11 @@ function useClinicDay() {
   const rev = React.useRef(null);          // the revision this browser last saw
   const retryAt = React.useRef(0);         // how long to wait after a failure
   const inFlight = React.useRef(false);    // one save at a time, always
+  // Who is signed in, for "saved by". The day lives ABOVE the login gate,
+  // so it cannot see the user directly — App tells it. A change nobody
+  // made (appointments arriving from the Clinical Suite before anyone signs
+  // in) is saved as KuBi's own.
+  const savedBy = React.useRef(null);
   // Staff must be able to SEE that saving is failing. A silent retry is
   // how a clinic works all afternoon and finds out at closing that
   // nothing was stored.
@@ -154,7 +219,11 @@ function useClinicDay() {
       // Reached the sheet. Either it holds today, or it holds nothing yet —
       // both mean writing is safe. Only the first restores anything.
       if (window.KuBi.dayIsForToday(result.record)) {
-        window.KuBi.restoreDay(day, result.record.state);
+        // A day saved while KuBi ran on demo data holds demo repairs,
+        // faults and packs. Connected, it is not restored — those would
+        // raise alerts about things that never happened — but its revision
+        // is still taken, so the next save replaces it cleanly.
+        if (window.KuBi.dayRestorable(result.record.state)) window.KuBi.restoreDay(day, result.record.state);
         rev.current = result.record.rev === undefined ? null : result.record.rev;
       } else {
         rev.current = null;                   // nothing stored for today yet
@@ -190,7 +259,7 @@ function useClinicDay() {
     const date = window.KuBi.operatingDate();
     const mine = window.KuBi.snapshotDay(day);
 
-    return window.KuBi.historySync.daySave(date, mine, rev.current, user.name)
+    return window.KuBi.historySync.daySave(date, mine, rev.current, savedBy.current || 'KuBi')
       .then(function (res) {
         if (res.ok) {
           rev.current = res.rev;
@@ -204,7 +273,7 @@ function useClinicDay() {
           const merged = window.KuBi.mergeDay(mine, res.record && res.record.state);
           window.KuBi.restoreDay(day, merged);
           rev.current = res.rev;
-          return window.KuBi.historySync.daySave(date, merged, res.rev, user.name)
+          return window.KuBi.historySync.daySave(date, merged, res.rev, savedBy.current || 'KuBi')
             .then(function (again) {
               if (again.ok) {
                 rev.current = again.rev; retryAt.current = 0;
@@ -262,6 +331,28 @@ function useClinicDay() {
     return function () { clearInterval(timer); };
   }, []);
 
+  // ---- today's appointments come from the Clinical Suite ---------------
+  // Every time the feed answers, the list and each status are taken from
+  // it, with KuBi's own two facts laid on top (in treatment, written up).
+  // The refs let the merge see the current KuBi state without the feed
+  // subscription being torn down on every tick.
+  const procRef = React.useRef(procedureState);
+  const closedRef = React.useRef(closedCases);
+  procRef.current = procedureState;
+  closedRef.current = closedCases;
+  React.useEffect(function () {
+    function pull() {
+      const f = window.KuBi.clinicFeed.data();
+      if (!f || !f.sources || !f.sources.clinical || !f.sources.clinical.ok) return;
+      setAppointments(function (prev) {
+        const next = window.KuBi.mergeFeedAppointments(f.appointments, prev, procRef.current, closedRef.current);
+        return JSON.stringify(next) === JSON.stringify(prev) ? prev : next;
+      });
+    }
+    pull();
+    return window.KuBi.clinicFeed.subscribe(pull);
+  }, []);
+
   // ---- the case outlives the day ----------------------------------------
   // Each case visit is read off the day as it happens and kept, so tomorrow
   // the case still knows what today did to it. Nothing is entered for this.
@@ -284,10 +375,11 @@ function useClinicDay() {
 
   // The day, plus whether it is actually reaching the sheet.
   day.saveState = saveState;
+  day.setSavedBy = function (name) { savedBy.current = name || null; };
   return day;
 }
 
-function Shell({ user, onLogout, lang, setLang, day }) {
+function Shell({ user, onLogout, lang, setLang, day, feed }) {
   const t = window.KuBi.t;
   const access = window.KuBi.AREA_ACCESS[user.role] || [];
   const [activeArea, setActiveArea] = React.useState(access[0]);
@@ -705,18 +797,56 @@ function Shell({ user, onLogout, lang, setLang, day }) {
             <button className="btn-ghost" onClick={onLogout}>{t('topbar.signOut', lang)}</button>
           </div>
         </header>
+        {/* The clinic's other apps stopped answering. Said once, plainly,
+            with how old what is on screen now is — never hidden behind the
+            last answer as if it were current. */}
+        {feed && window.KuBi.isConnected() && (feed.status === 'down' || feed.status === 'partial') ? (
+          <div className="feed-warning" role="status">
+            {(function () {
+              const s = feed.sources || {};
+              const parts = [];
+              if (feed.status === 'down') parts.push(t('feed.allDown', lang));
+              else {
+                if (s.clinical && !s.clinical.ok) parts.push(t('feed.appointmentsDown', lang));
+                if (s.management && !s.management.ok) parts.push(t('feed.staffDown', lang));
+                if (s.followUps && !s.followUps.ok) parts.push(t('feed.followUpsDown', lang));
+                if (s.inventory && !s.inventory.ok) parts.push(t('feed.stockDown', lang));
+              }
+              const when = feed.at ? ' · ' + t('feed.lastUpdated', lang) + ' ' +
+                new Date(feed.at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
+              return '⚠ ' + parts.join(' · ') + when;
+            })()}
+          </div>
+        ) : null}
         <main className="content">{renderArea()}</main>
       </div>
     </div>
   );
 }
 
+// The clinic's real data, refreshed every minute while KuBi is open. It
+// sits above the login gate for the same reason the day does: the staff
+// list is needed to sign in, and a shift change must not drop it.
+function useClinicFeed() {
+  const [state, setState] = React.useState(window.KuBi.clinicFeed.state());
+  React.useEffect(function () {
+    const off = window.KuBi.clinicFeed.subscribe(function () { setState(window.KuBi.clinicFeed.state()); });
+    window.KuBi.clinicFeed.start(60000);
+    return function () { off(); window.KuBi.clinicFeed.stop(); };
+  }, []);
+  return state;
+}
+
 function App() {
   const [user, setUser] = React.useState(null);
   const [lang, setLang] = React.useState('en');
+  const feed = useClinicFeed();
   const day = useClinicDay();
-  if (!user) return <LoginScreen onLogin={setUser} lang={lang} setLang={setLang} />;
-  return <Shell user={user} onLogout={function () { setUser(null); }} lang={lang} setLang={setLang} day={day} />;
+  day.setSavedBy(user ? user.name : null);
+  if (!user) return <LoginScreen onLogin={setUser} lang={lang} setLang={setLang} feed={feed} />;
+  return <Shell user={user} onLogout={function () { setUser(null); }} lang={lang} setLang={setLang} day={day} feed={feed} />;
 }
+window.KuBi.LoginScreen = LoginScreen;
+window.KuBi.App = App;
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);

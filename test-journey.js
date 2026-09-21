@@ -1807,6 +1807,255 @@ function step(fn, delay) { return new Promise(r => setTimeout(() => { fn(); r();
         mvKeys.every(k => K.t(k, 'en') !== k && K.t(k, 'hi') !== k && K.t(k, 'hi') !== K.t(k, 'en')),
         mvKeys.length + ' strings');
 
+  // 47. CONNECTED TO THE CLINIC'S OTHER APPS — the demo data goes, the
+  //     real data comes in through the gateway, and nothing invented is
+  //     left to raise an alert. Everything here runs against a stubbed
+  //     fetch; the suite never touches the network.
+  const cfKeys = ['EMPLOYEES', 'ATTENDANCE', 'ATTENDANCE_LAST_SYNCED', 'APPOINTMENTS_TODAY', 'FOLLOW_UPS',
+                  'PATIENT_RECORDS', 'UPCOMING', 'CASES', 'LAB_CASES', 'MATERIALS', 'STER_PACKS',
+                  'REPAIRS_SEED', 'EQUIPMENT_STATUS_SEED', 'CHAIRS'];
+  const cfSaved = {};
+  cfKeys.forEach(k => { cfSaved[k] = K[k]; });
+  const cfCfg = w.KuBi.SHEETS_CONFIG;
+  const cfToday = K.operatingDate();
+  const cfDay = n => K.operatingDate(new Date(Date.now() + n * 86400000));
+
+  check('Without a sheet, KuBi is in demo mode', K.isConnected() === false);
+
+  // ---- the demo data goes ----
+  K.clearDemoData();
+  check('Connected, every piece of demo data is emptied',
+        K.EMPLOYEES.length === 0 && K.APPOINTMENTS_TODAY.length === 0 && K.FOLLOW_UPS.length === 0 &&
+        K.PATIENT_RECORDS.length === 0 && Object.keys(K.CASES).length === 0 && Object.keys(K.LAB_CASES).length === 0 &&
+        K.MATERIALS.length === 0 && K.STER_PACKS.length === 0 && K.REPAIRS_SEED.length === 0 &&
+        Object.keys(K.EQUIPMENT_STATUS_SEED).length === 0);
+  const cfEmptyAttention = K.computeAttentionItems([], {}, {}, { open: true, at: new Date() }, {}, {}, {}, [], {}, {}, {});
+  // Rooms not ready is real — the clinic is open and nothing is ticked.
+  // What must not appear is anything demo data used to invent.
+  const cfInvented = cfEmptyAttention.filter(i => ['repairOpen', 'equipmentDown', 'labLate', 'followUpDue'].indexOf(i.kind) !== -1);
+  check('...and with nothing invented, no repair, fault, lab or follow-up is raised',
+        cfInvented.length === 0, cfInvented.map(i => i.kind).join(',') || cfEmptyAttention.map(i => i.kind).join(','));
+  check('...and the next action does not trip over the empty lists',
+        !!K.nextAction({ clinicStatus: { open: true, at: new Date() }, readinessChecked: {}, appointments: [],
+                         treatmentChecked: {}, treatmentCheckedAfter: {}, procedureState: {}, closedCases: {},
+                         equipmentStatus: {}, sterPacks: [], labReceived: {} }).kind);
+
+  // ---- the real data comes in ----
+  const cfFeed = {
+    status: 'ok', date: cfToday,
+    sources: { management: { ok: true }, inventory: { ok: true }, clinical: { ok: true },
+               followUps: { ok: true }, lists: { ok: true } },
+    staff: [
+      { id: 'S1', name: 'Mahima', designation: 'Lead Dental Nurse', role: 'lead_dental_assistant', active: true, source: 'management' },
+      { id: 'S2', name: 'Kajal', designation: 'Receptionist', role: 'front_desk_receptionist', active: true, source: 'management' },
+      { id: 'S3', name: 'Raju', designation: 'Rider', role: null, active: true, source: 'management' },
+      { id: 'S4', name: 'Sunil', designation: 'Housekeeping Staff', role: 'house_keeping', active: true, source: 'management' },
+      { id: 'kubi:dr manika mittel', name: 'Dr. Manika Mittel', designation: 'dentist', role: 'associate_dentist', active: true, source: 'kubi' },
+      { id: 'S9', name: 'Gone', designation: 'Receptionist', role: 'front_desk_receptionist', active: false, source: 'management' },
+    ],
+    attendance: [
+      { staffId: 'S1', staffName: 'Mahima', date: cfToday, checkIn: '08:52', late: false, lateMin: 0 },
+      { staffId: '', staffName: 'kajal', date: cfToday, checkIn: '09:25', late: true, lateMin: 25 },
+    ],
+    leave: [{ staffName: 'Sunil', type: 'Casual' }],
+    appointments: [
+      { id: 'APT-1', date: cfToday, time: '09:30', patient: 'Real Patient', doctor: 'Dr. Manika Mittel', chair: 1,
+        treatment: 'Root canal', procedureType: 'RCT', status: 'waiting', statusTime: '09:40', caseId: null },
+      { id: 'APT-2', date: cfToday, time: '10:00', patient: 'Second Patient', doctor: 'Dr. Manika Mittel', chair: 2,
+        treatment: 'Scaling', procedureType: 'Scaling', status: 'booked', statusTime: '', caseId: null },
+    ],
+    upcoming: [{ date: cfDay(2), patient: 'Real Patient', procedureType: 'RCT', caseId: null }],
+    followUps: [{ id: 'PT|U9|' + cfToday, uhid: 'U9', patient: 'Review Person', reason: 'Extraction review', due: cfToday, caseId: null }],
+    recall: [{ uhid: 'U8', patient: 'Long Gone', lastVisit: cfDay(-260), daysSince: 260 }],
+    missed: [], doctors: ['Dr. Manika Mittel'], chairs: ['Chair 1', 'Chair 2', 'Chair 3'],
+    cases: {}, casesMissing: [], inventory: [], equipment: [], sterilisation: [], tasksDone: [],
+  };
+  K.applyFeed(cfFeed);
+
+  check('Staff come from the feed, people who have left do not',
+        K.EMPLOYEES.length === 5 && !K.EMPLOYEES.some(e => e.name === 'Gone'), K.EMPLOYEES.map(e => e.name).join(', '));
+  check('...with no PIN on anybody', K.EMPLOYEES.every(e => !('pin' in e)));
+  const cfAtt = n => K.ATTENDANCE.find(a => a.empId === K.EMPLOYEES.find(e => e.name === n).id);
+  check('Checked in on time is Present', cfAtt('Mahima').status === 'Present' && cfAtt('Mahima').timeIn === '08:52');
+  check('Late carries its minutes, matched by name when there is no id',
+        cfAtt('Kajal').status === 'Late' && /25/.test(cfAtt('Kajal').lateReason));
+  check('Approved leave is On leave, not Absent', cfAtt('Sunil').status === 'Leave');
+  check('No check-in and no leave is Absent', cfAtt('Raju').status === 'Absent');
+  check('The attendance screen\'s counts move with the real day',
+        K.attendanceCounts().Present === 1 && K.attendanceCounts().Late === 1 && K.attendanceCounts().Absent === 2,
+        JSON.stringify(K.attendanceCounts()));
+  check('Follow-ups come from the Clinical Suite', K.FOLLOW_UPS.length === 1 && K.followUpsDue().length === 1);
+  const cfLapsed = K.lapsedPatients();
+  check('Recalls are patients who have not returned, with no guess about their plan',
+        cfLapsed.length === 1 && cfLapsed[0].started === null && cfLapsed[0].planned === '');
+  check('Next week\'s bookings come across', K.UPCOMING.length === 1 && K.UPCOMING[0].date === cfDay(2));
+  check('Chairs are the Clinical Suite\'s', JSON.stringify(K.CHAIRS) === '[1,2,3]');
+  check('The recall wording exists in both languages',
+        K.t('lapsed.recall', 'en') !== 'lapsed.recall' && K.t('lapsed.recall', 'hi') !== 'lapsed.recall');
+
+  // A part that failed leaves what was there.
+  K.applyFeed(Object.assign({}, cfFeed, { sources: Object.assign({}, cfFeed.sources, { management: { ok: false, error: 'HTTP 500' } }),
+                                          staff: [], attendance: [] }));
+  check('A failed part does not wipe the last real answer', K.EMPLOYEES.length === 5);
+
+  // ---- appointments: the Clinical Suite's, with KuBi's own two facts ----
+  const cfPrev = [{ id: 'DEMO-1', patient: 'Arjun Prasad', status: 'in_chair' },
+                  { id: 'APT-2', status: 'booked', statusAt: null }];
+  let cfM = K.mergeFeedAppointments(cfFeed.appointments, cfPrev, {}, {});
+  check('The list is the Clinical Suite\'s — anything else goes', cfM.length === 2 && !cfM.some(a => a.id === 'DEMO-1'));
+  check('...and its status', cfM[0].status === 'waiting' && cfM[0].source === 'clinical');
+  check('The wait is timed from when the Clinical Suite checked them in',
+        new Date(cfM[0].statusAt).getHours() === 9 && new Date(cfM[0].statusAt).getMinutes() === 40);
+  cfM = K.mergeFeedAppointments(cfFeed.appointments, cfM, { 'APT-1': { startedAt: new Date() } }, {});
+  check('A procedure KuBi started is "in treatment", whatever the front desk shows',
+        cfM[0].status === 'in_treatment');
+  cfM = K.mergeFeedAppointments(cfFeed.appointments, cfM,
+    { 'APT-1': { startedAt: new Date(), completedAt: new Date() } }, { 'APT-1': { closedAt: new Date() } });
+  check('A visit KuBi wrote up is done', cfM[0].status === 'done');
+  const cfNoShow = K.mergeFeedAppointments([Object.assign({}, cfFeed.appointments[0], { status: 'no_show' })], [],
+                                          { 'APT-1': { startedAt: new Date() } }, {});
+  check('A no-show stays a no-show', cfNoShow[0].status === 'no_show');
+  const cfSame = K.mergeFeedAppointments([Object.assign({}, cfFeed.appointments[1], { status: 'in_chair', statusTime: '' })],
+                                        [{ id: 'APT-2', status: 'in_chair', statusAt: '2026-01-01T10:05:00' }], {}, {});
+  check('With no time from the Clinical Suite, an unchanged status keeps the time KuBi had',
+        cfSame[0].statusAt === '2026-01-01T10:05:00');
+
+  // ---- a day saved on demo data is not brought back ----
+  w.KuBi.SHEETS_CONFIG = { url: 'https://example.invalid/exec', token: 't' };
+  w.fetch = () => Promise.reject(new Error('offline'));
+  check('With a sheet, KuBi is connected', K.isConnected() === true);
+  check('Connected, a day saved on demo data is not restored',
+        K.dayRestorable({ clinicStatus: {}, mode: 'demo' }) === false && K.dayRestorable({ clinicStatus: {} }) === false);
+  check('...a day a connected KuBi saved is', K.dayRestorable({ clinicStatus: {}, mode: 'connected' }) === true);
+  check('Saving marks the day connected', K.snapshotDay({}).mode === 'connected');
+
+  // ---- the feed store ----
+  K.clinicFeed.reset();
+  w.fetch = (url) => /action=feed/.test(url)
+    ? Promise.resolve({ ok: true, json: () => Promise.resolve(cfFeed) })
+    : Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+  await K.clinicFeed.load();
+  check('The feed loads and says so', K.clinicFeed.state().status === 'ok' && !!K.clinicFeed.data());
+  w.fetch = (url) => /action=feed/.test(url)
+    ? Promise.resolve({ ok: true, json: () => Promise.resolve(Object.assign({}, cfFeed,
+        { sources: Object.assign({}, cfFeed.sources, { clinical: { ok: false, error: 'HTTP 502' } }) })) })
+    : Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+  await K.clinicFeed.load();
+  check('One app down: the feed is partial, not ok', K.clinicFeed.state().status === 'partial');
+  w.fetch = () => Promise.reject(new Error('offline'));
+  await K.clinicFeed.load();
+  check('Unreachable: down, and what was shown stays with its time',
+        K.clinicFeed.state().status === 'down' && !!K.clinicFeed.data() && !!K.clinicFeed.state().at);
+
+  // ---- signing in, connected ----
+  K.applyFeed(cfFeed);
+  const cfSent = [];
+  w.fetch = (url, init) => {
+    cfSent.push({ url: url, body: init && init.body });
+    if (/action=signIn/.test(url)) {
+      const b = JSON.parse(init.body);
+      const ok = b.name === 'Mahima' && b.pin === '4711';
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(ok
+        ? { status: 'ok', ok: true, person: { id: 'S1', name: 'Mahima', role: 'lead_dental_assistant', source: 'management' } }
+        : { status: 'ok', ok: false, reason: 'wrongPin' }) });
+    }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+  };
+  const cfBox = doc().createElement('div');
+  doc().body.appendChild(cfBox);
+  const cfRoot = w.ReactDOM.createRoot(cfBox);
+  let cfSignedIn = null;
+  await step(() => w.ReactDOM.flushSync(() => cfRoot.render(w.React.createElement(K.LoginScreen,
+    { onLogin: p => { cfSignedIn = p; }, lang: 'en', setLang: () => {}, feed: { status: 'ok' } }))));
+  const cfNames = Array.from(cfBox.querySelectorAll('#who option')).map(o => o.value).filter(Boolean);
+  check('Sign-in asks for a name first, from the real staff list',
+        cfNames.length === 4 && cfNames.indexOf('Mahima') !== -1 && cfNames.indexOf('Raju') === -1,
+        cfNames.join(', '));
+  const cfType = (id, v, proto) => {
+    const el = cfBox.querySelector('#' + id);
+    w.Object.getOwnPropertyDescriptor(proto.prototype, 'value').set.call(el, v);
+    el.dispatchEvent(new w.Event(id === 'who' ? 'change' : 'input', { bubbles: true }));
+  };
+  const cfSubmit = () => cfBox.querySelector('form').dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
+  // The answer comes back asynchronously and React paints it when its
+  // scheduler gets round to it, which in jsdom is slow and uneven. Wait for
+  // the screen to settle rather than guessing how long that takes.
+  const cfSettle = async () => {
+    for (let i = 0; i < 50; i++) {
+      await step(() => {}, 100);
+      // An outcome, not just an idle button: someone signed in, or a reason shown.
+      if (cfSignedIn || cfBox.querySelector('.field-error')) return;
+    }
+  };
+  await step(() => { cfType('who', 'Mahima', w.HTMLSelectElement); });
+  await step(() => { cfType('pin', '0000', w.HTMLInputElement); });
+  await step(() => cfSubmit(), 50); await cfSettle();
+  check('The demo PIN does not open a connected KuBi',
+        cfSignedIn === null && /PIN is not right/.test(cfBox.textContent), cfBox.querySelector('.field-error') && cfBox.querySelector('.field-error').textContent);
+  await step(() => { cfType('pin', '4711', w.HTMLInputElement); });
+  await step(() => cfSubmit(), 50); await cfSettle();
+  check('The person\'s own PIN, checked by the gateway, signs them in',
+        !!cfSignedIn && cfSignedIn.name === 'Mahima' && cfSignedIn.role === 'lead_dental_assistant');
+  check('The PIN went in the request body, never the address',
+        cfSent.every(r => r.url.indexOf('4711') === -1 && r.url.indexOf('0000') === -1) &&
+        cfSent.some(r => r.body && /4711/.test(r.body)));
+  await step(() => w.ReactDOM.flushSync(() => cfRoot.render(w.React.createElement(K.LoginScreen,
+    { onLogin: () => {}, lang: 'en', setLang: () => {}, feed: { status: 'loading' } }))));
+  K.EMPLOYEES = [];
+  await step(() => w.ReactDOM.flushSync(() => cfRoot.render(w.React.createElement(K.LoginScreen,
+    { onLogin: () => {}, lang: 'hi', setLang: () => {}, feed: { status: 'loading' } }))));
+  check('Before the staff list arrives, it says it is connecting — no PIN box',
+        !cfBox.querySelector('#pin') && cfBox.textContent.indexOf(K.t('login.connecting', 'hi')) !== -1);
+  await step(() => w.ReactDOM.flushSync(() => cfRoot.render(w.React.createElement(K.LoginScreen,
+    { onLogin: () => {}, lang: 'en', setLang: () => {}, feed: { status: 'down' } }))));
+  check('Unreachable: it says so and offers to try again — never the demo sign-in',
+        !cfBox.querySelector('#pin') && !!Array.from(cfBox.querySelectorAll('button')).find(b => /Try again/.test(b.textContent)));
+  await step(() => cfRoot.unmount());
+  cfBox.remove();
+
+  const cfWords = ['login.yourName', 'login.pickName', 'login.connecting', 'login.noStaff', 'login.retry',
+                   'login.reason.wrongPin', 'login.reason.locked', 'login.reason.unknown', 'login.reason.noKubiRole',
+                   'login.reason.unreachable', 'feed.allDown', 'feed.appointmentsDown', 'feed.staffDown',
+                   'status.Leave', 'appt.changeInClinical'];
+  check('Every connected-mode word exists in both languages',
+        cfWords.every(k => K.t(k, 'en') !== k && K.t(k, 'hi') !== k), cfWords.length + ' strings');
+
+  // ---- the whole app, connected, saving its day ----
+  // The day is saved from ABOVE the login gate, where no user exists. The
+  // save once read the user's name there, threw, and left saving stuck for
+  // the rest of the session. Only a connected app saves, so no demo-mode
+  // test could see it: this one runs the real App against a stubbed sheet.
+  K.clinicFeed.reset();
+  const apSaves = [];
+  const apErrorsBefore = errors.length;
+  w.fetch = (url, init) => {
+    const ok = body => Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
+    if (/action=feed/.test(url)) return ok(cfFeed);
+    if (/action=dayGet/.test(url)) return ok({ status: 'ok', record: null });
+    if (/action=dayPut/.test(url)) { apSaves.push(JSON.parse(init.body)); return ok({ status: 'ok', rev: apSaves.length }); }
+    if (/action=caseVisitsAll/.test(url)) return ok({ status: 'ok', rows: [] });
+    return ok({ status: 'ok' });
+  };
+  const apBox = doc().createElement('div');
+  doc().body.appendChild(apBox);
+  const apRoot = w.ReactDOM.createRoot(apBox);
+  await step(() => w.ReactDOM.flushSync(() => apRoot.render(w.React.createElement(K.App))), 200);
+  for (let i = 0; i < 60 && !apSaves.length; i++) await step(() => {}, 100);
+  check('Connected, the day is saved once the Clinical Suite\'s appointments arrive',
+        apSaves.length > 0 && (apSaves[0].state.appointments || []).length === 2, apSaves.length + ' save(s)');
+  check('...recorded as KuBi\'s own change, since nobody is signed in yet',
+        apSaves.length > 0 && apSaves[0].by === 'KuBi', apSaves[0] && apSaves[0].by);
+  check('...marked as a connected day', apSaves.length > 0 && apSaves[0].state.mode === 'connected');
+  check('...and without an error', errors.length === apErrorsBefore, errors.slice(apErrorsBefore).join(' | '));
+  await step(() => apRoot.unmount());
+  apBox.remove();
+
+  // Put the demo world back for anything that follows.
+  K.clinicFeed.reset();
+  cfKeys.forEach(k => { K[k] = cfSaved[k]; });
+  w.KuBi.SHEETS_CONFIG = cfCfg;
+  delete w.fetch;
+
   // SUMMARY
   await step(() => {}, 150);
   const failed = results.filter(r => !r.pass);

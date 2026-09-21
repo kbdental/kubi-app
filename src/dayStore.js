@@ -51,7 +51,21 @@ window.KuBi.DAY_MAX_CHARS = 45000;
 window.KuBi.snapshotDay = function (day) {
   const out = {};
   window.KuBi.DAY_FIELDS.forEach(function (f) { out[f] = day[f]; });
+  // Which KuBi made this day: one running on the clinic's real data, or
+  // one running on demo data. Not a day field — nobody changes it.
+  out.mode = window.KuBi.isConnected && window.KuBi.isConnected() ? 'connected' : 'demo';
   return out;
+};
+
+/**
+ * May a stored day be loaded? Always, in demo. Connected, only a day that a
+ * connected KuBi saved: one saved on demo data would bring demo repairs,
+ * faults and packs back as though they were real.
+ */
+window.KuBi.dayRestorable = function (state) {
+  if (!state) return false;
+  if (!(window.KuBi.isConnected && window.KuBi.isConnected())) return true;
+  return state.mode === 'connected';
 };
 
 /**
